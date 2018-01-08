@@ -1,6 +1,19 @@
 # ILP Plugin XRP Asym Server
 
-```
+ILP Plugin XRP Asym Server allows you to accept payment channel connections
+from many users without adding them as peers. If you're running a connector,
+this is a great way to get sub-connectors and provide ILP connection to users
+without asking them to trust you with their money.
+
+Details of how the connection is established are described in this plugin's
+client,
+[`ilp-plugin-xrp-asym-client`](https://github.com/interledgerjs/ilp-plugin-xrp-asym-client)
+
+This plugin is based off of
+[`ilp-plugin-mini-accounts`](https://github.com/interledgerjs/ilp-plugin-mini-accounts),
+with XRP payment channel functionality on top.
+
+```js
 const serverPlugin = new IlpPluginXrpAsymServer({
   // Port on which to listen
   port: 6666,
