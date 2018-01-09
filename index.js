@@ -17,7 +17,8 @@ const MIN_INCOMING_CHANNEL = 10000000
 const CHANNEL_KEYS = 'ilp-plugin-multi-xrp-paychan-channel-keys'
 const DEFAULT_TIMEOUT = 30000 // TODO: should this be something else?
 const StoreWrapper = require('./src/store-wrapper')
-const { 
+const Account = require('./src/account')
+const {
   util,
   ChannelWatcher
 } = require('ilp-plugin-xrp-paychan-shared')
@@ -45,15 +46,9 @@ class Plugin extends MiniAccountsPlugin {
     this._watcher = new ChannelWatcher(10 * 60 * 1000, this._api)
     this._bandwidth = opts.bandwidth || 1000
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
+    this._store = new StoreWrapper(opts._store)
 
-    this._balances = new StoreWrapper(opts._store)
-    this._paychans = new Map()
-    this._clientPaychans = new Map()
-    this._channelToAccount = new Map()
-    this._connections = new Map()
-    this._funding = new Map()
-    this._lastClaimedAmounts = new Map()
-    this._claimIntervalIds = new Map()
+    this._accounts = new Map()
   }
 
   sendTransfer () {}
@@ -83,28 +78,39 @@ class Plugin extends MiniAccountsPlugin {
     }
   }
 
-  _extraInfo (from) {
-    const account = ilpAddressToAccount(this._prefix, from)
-    const channel = this._balances.get(account + ':channel')
-    const clientChannel = this._balances.get(account + ':client_channel')
-    const address = this._address
-    
+  _getAccount (from) {
+    const accountName = ilpAddressToAccount(this._prefix, from)
+    let account = this._accounts.get(accountName)
+
+    if (!account) {
+      account = new Account({ 
+        account: accountName,
+        store: this._store,
+        api: this._api
+      })
+      this._accounts.set(accountName, account)
+    }
+
+    return account
+  }
+
+  _extraInfo (account) {
     return {
-      channel,
-      clientChannel,
-      address,
+      channel: account.getChannel(),
+      clientChannel: account.getClientChannel(),
+      address: this._address,
       account: from
     }
   }
 
   async _channelClaim (account) {
-    debug('creating claim for claim. account=' + account)
-    const balance = this._balances.get(account)
-    const channel = this._balances.get(account + ':channel')
-    const claim = this._getLastClaim(account)
-    const publicKey = this._paychans.get(account).publicKey
+    debug('creating claim for claim. account=' + account.getAccount())
+    const balance = account.getBalance()
+    const channel = account.getChannel()
+    const claim = account.getIncomingClaim()
+    const publicKey = account.getPaychan().publicKey
 
-    debug('creating claim tx. account=' + account)
+    debug('creating claim tx. account=' + account.getAccount())
     const tx = await this._api.preparePaymentChannelClaim(this._address, {
       balance: util.dropsToXrp(claim.amount.toString()),
       signature: claim.signature.toUpperCase(),
@@ -112,10 +118,10 @@ class Plugin extends MiniAccountsPlugin {
       channel
     })
 
-    debug('signing claim transaction. account=' + account)
+    debug('signing claim transaction. account=' + account.getAccount())
     const signedTx = this._api.sign(tx.txJSON, this._secret)
 
-    debug('submitting claim transaction. tx=', tx, ' account=' + account)
+    debug('submitting claim transaction. tx=', tx, ' account=' + account.getAccount())
     const {resultCode, resultMessage} = await this._api.submit(signedTx.signedTransaction)
     if (resultCode !== 'tesSUCCESS') {
       console.error('WARNING: Error submitting close: ', resultMessage)
@@ -123,16 +129,15 @@ class Plugin extends MiniAccountsPlugin {
   }
 
   async _channelClose (channelId, closeAt) {
-    const account = channelToAccount.get(channelId) 
+    const account = this._channelToAccount.get(channelId)
 
     // disable the account once the channel is closing
-    this._balances.set(account + ':block')
+    account.block()
 
     // close our outgoing channel to them
     debug('creating claim for closure')
-    const balanceKey = account + ':outgoing_balance'
-    const balance = this._balances.get(balanceKey)
-    const channel = this._balances.get(account + ':client_channel')
+    const balance = account.getBalance()
+    const channel = account.getClientChannel()
     const encodedClaim = util.encodeClaim(balance.toString(), channel)
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account)
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
@@ -167,51 +172,29 @@ class Plugin extends MiniAccountsPlugin {
 
   // TODO: also implement cleanup logic
   async _connect (address, { requestId, data }) {
-    const account = this.ilpAddressToAccount(address)
-    const channelKey = account + ':channel'
-    await this._balances.load(channelKey)
-    const existingChannel = this._balances.get(channelKey)
+    const account = this._getAccount(address)
+    await account.connect()
 
-    await this._balances.load(account)
-    await this._balances.load(account + ':claim')
-    await this._balances.load(account + ':block')
-    await this._balances.load(account + ':client_channel')
-    await this._balances.load(account + ':outgoing_balance')
-    const existingClientChannel = this._balances.get(account + ':client_channel')
-
+    const existingChannel = account.getChannel()
     if (existingChannel) {
-      // TODO: DoS vector by requesting paychan on user connect?
-      const paychan = await this._api.getPaymentChannel(existingChannel)
-      this._validatePaychanDetails(paychan)
-      this._paychans.set(account, paychan)
+      this._validatePaychanDetails(account.getPaychan())
       this._channelToAccount.set(existingChannel, account)
       await this._registerAutoClaim(account)
-    }
-
-    if (existingClientChannel) {
-      const paychan = await this._api.getPaymentChannel(existingClientChannel)
-      this._clientPaychans.set(account, paychan)
     }
 
     return null
   }
 
   async _fundOutgoingChannel (account, primary) {
-    await this._balances.load(account + ':client_channel')
-    await this._balances.load(account + ':outgoing_balance')
-
-    const existing = this._balances.get(account + ':client_channel')
-    if (existing) {
+    if (account.getClientChannel()) {
       debug('outgoing channel already exists')
-      const paychan = await this._api.getPaymentChannel(existing)
-      this._clientChannels.set(account, paychan)
-      return existing
+      return account.getClientPaychan()
     }
 
-    this._balances.setCache(account + ':client_channel', true)
+    // TODO: some way to do this via account class
+    this._store.setCache(account + ':client_channel', true)
 
     const outgoingAccount = primary.data.toString() 
-    // TODO: validate the account
 
     debug('creating outgoing channel fund transaction')
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account)
@@ -246,11 +229,10 @@ class Plugin extends MiniAccountsPlugin {
           ev.transaction.Sequence)
 
         debug('created outgoing channel. channel=', clientChannelId)
-        this._balances.set(account + ':outgoing_balance', '0')
-        this._balances.set(account + ':client_channel', clientChannelId)
+        const clientPaychan = await this._api.getPaymentChannel(clientChannelId)
 
-        const paychan = await this._api.getPaymentChannel(clientChannelId)
-        this._clientPaychans.set(account, paychan)
+        account.setOutgoingBalance('0')
+        account.setClientChannel(clientChannelId, clientPaychan)
 
         setImmediate(() => this._api.connection
           .removeListener('transaction', handleTransaction))
@@ -262,7 +244,7 @@ class Plugin extends MiniAccountsPlugin {
   }
 
   async _handleCustomData (from, message) {
-    const account = ilpAddressToAccount(this._prefix, from)
+    const account = this._getAccount(from)
     const protocols = message.data.protocolData
     if (!protocols.length) return
 
@@ -274,11 +256,11 @@ class Plugin extends MiniAccountsPlugin {
     const info = protocols.filter(p => p.protocolName === 'info')[0]
 
     if (getLastClaim) {
-      debug('got request for last claim:', this._getLastClaim(account))
+      debug('got request for last claim. claim=', account.getIncomingClaim())
       return [{
         protocolName: 'last_claim',
         contentType: BtpPacket.MIME_APPLICATION_JSON,
-        data: Buffer.from(JSON.stringify(this._getLastClaim(account)))
+        data: Buffer.from(JSON.stringify(account.getIncomingClaim()))
       }]
     }
 
@@ -287,12 +269,12 @@ class Plugin extends MiniAccountsPlugin {
       return [{
         protocolName: 'info',
         contentType: BtpPacket.MIME_APPLICATION_JSON,
-        data: Buffer.from(JSON.stringify(this._extraInfo(from)))
+        data: Buffer.from(JSON.stringify(this._extraInfo(account)))
       }]
     }
 
     if (channelProtocol) {
-      debug('got message for incoming channel on account', account)
+      debug('got message for incoming channel. account=', account.getAccount())
       const channel = channelProtocol.data
         .toString('hex')
         .toUpperCase()
@@ -301,9 +283,7 @@ class Plugin extends MiniAccountsPlugin {
         throw new Error(`got channel without signature of channel ownership.`)
       }
 
-      const channelKey = account + ':channel'
-      const existingChannel = this._balances.get(channelKey)
-
+      const existingChannel = account.getChannel()
       if (existingChannel && existingChannel !== channel) {
         throw new Error(`there is already an existing channel on this account
           and it doesn't match the 'channel' protocolData`)
@@ -314,14 +294,15 @@ class Plugin extends MiniAccountsPlugin {
       // added
       const paychan = await this._api.getPaymentChannel(channel)
 
-      await this._balances.load('channel:' + channel)
-      const accountForChannel = this._balances.get('channel:' + channel)
+      // TODO: factor reverse-channel lookup into other class?
+      await this._store.load('channel:' + channel)
+      const accountForChannel = this._store.get('channel:' + channel)
       if (accountForChannel && channel !== accountForChannel) {
         throw new Error(`this channel has already been associated with a
           different account. account=${account} associated=${accountForChannel}`)
       }
 
-      const encodedChannelProof = util.encodeChannelProof(channel, account)
+      const encodedChannelProof = util.encodeChannelProof(channel, account.getAccount())
       nacl.sign.detached.verify(
         encodedChannelProof,
         channelSignatureProtocol.data,
@@ -329,31 +310,23 @@ class Plugin extends MiniAccountsPlugin {
       )
 
       this._validatePaychanDetails(paychan)
-      this._paychans.set(account, paychan)
       this._channelToAccount.set(channel, account)
-      this._balances.set(account + ':channel', channel)
-      this._balances.set('channel:' + channel, account)
+      this._store.set('channel:' + channel, account)
+      account.setChannel(channel, paychan)
 
       await this._registerAutoClaim(account)
-      debug('registered payment channel for', account)
+      debug('registered payment channel. account=', account.getAccount())
     }
 
     if (fundChannel) {
-      const incomingChannel = this._paychans.get(account)
-
-      if (new BigNumber(util.xrpToDrops(incomingChannel.amount)).lessThan(MIN_INCOMING_CHANNEL)) {
+      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lessThan(MIN_INCOMING_CHANNEL)) {
         debug('denied outgoing paychan request; not enough has been escrowed')
         throw new Error('not enough has been escrowed in channel; must put ' +
           MIN_INCOMING_CHANNEL + ' drops on hold')
       }
 
-      debug('an outgoing paychan has been authorized for', account, '; establishing')
+      debug('an outgoing paychan has been authorized for', account.getAccount(), '; establishing')
       const clientChannelId = await this._fundOutgoingChannel(account, fundChannel)
-
-      // TODO: should the channel subprotocol be merged with fund_channel, such that the
-      // connector will see that enough funds have been escrowed to them and then they can
-      // open a counter-channel?
-
       return [{
         protocolName: 'fund_channel',
         contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
@@ -370,7 +343,7 @@ class Plugin extends MiniAccountsPlugin {
       // TODO: don't do this, use connector only instead
       if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE && IlpPacket.deserializeIlpPrepare(ilp.data).destination === 'peer.config') {
         const writer = new Writer()
-        const response = this._prefix + account
+        const response = this._prefix + account.getAccount()
         writer.writeVarOctetString(Buffer.from(response))
 
         return [{
@@ -405,25 +378,22 @@ class Plugin extends MiniAccountsPlugin {
   }
 
   async _registerAutoClaim (account) {
+    if (account.getClaimIntervalId()) return
+
     debug('registering auto-claim. interval=' + this._claimInterval,
-      'account=' + account)
+      'account=' + account.getAccount())
 
-    const paychan = this._paychans.get(account)
+    account.setClaimIntervalId(setInterval(async () => {
+      const lastClaimedAmount = account.getLastClaimedAmount()
+      const amount = account.getIncomingClaim().amount
 
-    // TODO: better cleanup of in-memory fields
-    // TODO: will a channel update trigger two concurrent intervals?
-    this._lastClaimedAmounts.set(account, util.xrpToDrops(paychan.balance))
-    this._claimIntervalIds.set(account, setInterval(async () => {
-      const lastClaimedAmount = this._lastClaimedAmounts.get(account)
-      const amount = this._getLastClaim(account).amount
-
-      debug('auto-claiming. account=' + account, 'amount=' + amount,
+      debug('auto-claiming. account=' + account.getAccount(), 'amount=' + amount,
         'lastClaimedAmount=' + lastClaimedAmount)
       if (new BigNumber(lastClaimedAmount).lessThan(amount)) {
-        debug('starting automatic claim. amount=' + amount + ' account=' + account)
-        this._lastClaimedAmounts.set(account, amount)
+        debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
+        account.setLastClaimedAmount(amount)
         await this._channelClaim(account)
-        debug('claimed funds. account=' + account)
+        debug('claimed funds. account=' + account.getAccount())
       }
     }, this._claimInterval))
   }
@@ -445,7 +415,7 @@ class Plugin extends MiniAccountsPlugin {
       : IlpPacket.serializeIlpError({
           code: 'F00',
           name: 'Bad Request',
-          triggeredBy: this._prefix,
+          triggeredBy: this._prefix + account.getAccount(),
           forwardedBy: [],
           triggeredAt: new Date(),
           data: JSON.stringify({
@@ -463,20 +433,17 @@ class Plugin extends MiniAccountsPlugin {
       data
     } = IlpPacket.deserializeIlpPrepare(ilpData)
 
-    const paychan = this._paychans.get(account)
-    if (!paychan) {
+    if (!account.getPaychan()) {
       throw new Error(`Incoming traffic won't be accepted until a channel
         to the connector is established.`)
     }
 
-    if (this._balances.get(account + ':block')) {
+    if (account.isBlocked()) {
       throw new Error('This account has been closed.')
     }
 
-    const lastClaim = this._getLastClaim(account)
-    const lastValue = new BigNumber(lastClaim.amount)
-
-    const prepared = new BigNumber(this._balances.get(account) || '0')
+    const lastValue = account.getIncomingClaim().amount
+    const prepared = account.getBalance()
     const newPrepared = prepared.add(amount)
     const unsecured = newPrepared.sub(lastValue)
     debug(unsecured.toString(), 'unsecured; last claim is',
@@ -488,22 +455,23 @@ class Plugin extends MiniAccountsPlugin {
         this._bandwidth)
     }
 
-    if (newPrepared.greaterThan(util.xrpToDrops(paychan.amount))) {
-      throw new Error('Insufficient funds, have: ' + util.xrpToDrops(paychan.amount) +
+    if (newPrepared.greaterThan(util.xrpToDrops(account.getPaychan().amount))) {
+      throw new Error('Insufficient funds, have: ' +
+        util.xrpToDrops(account.getPaychan().amount) +
         ' need: ' + newPrepared.toString())
     }
 
-    this._balances.set(account, newPrepared.toString())
-    debug(`account ${account} debited ${amount} units, new balance ${newPrepared.toString()}`)
+    account.setBalance(newPrepared.toString())
+    debug(`account ${account.getAccount()} debited ${amount} units, new balance ${newPrepared.toString()}`)
   }
 
   _rejectIncomingTransfer (account, ilpData) {
     const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
-    const prepared = new BigNumber(this._balances.get(account))
+    const prepared = account.getBalance()
     const newPrepared = prepared.sub(amount)
 
-    this._balances.set(account, newPrepared)
-    debug(`account ${account} roll back ${amount} units, new balance ${newPrepared.toString()}`)
+    account.setBalance(newPrepared.toString())
+    debug(`account ${account.getAccount()} roll back ${amount} units, new balance ${newPrepared.toString()}`)
   }
 
   _sendPrepare (destination, parsedPacket) {
@@ -551,62 +519,58 @@ class Plugin extends MiniAccountsPlugin {
   }
 
   _sendMoneyToAccount (transferAmount, to) {
-    const account = ilpAddressToAccount(this._prefix, to)
-    const balanceKey = account + ':outgoing_balance'
+    const account = this._getAccount(to)
+    // TODO: do we need to connect this account?
 
-    const currentBalance = new BigNumber(this._balances.get(balanceKey) || 0)
+    const currentBalance = account.getBalance()
     const newBalance = currentBalance.add(transferAmount)
-
-    // TODO: fund if above a certain threshold (50%?)
-
-    this._balances.set(balanceKey, newBalance.toString())
-    debug(`account ${balanceKey} added ${transferAmount} units, new balance ${newBalance}`)
+    account.setBalance(newBalance.toString())
+    debug(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
 
     // sign a claim
-    const channel = this._balances.get(account + ':client_channel')
-    const encodedClaim = util.encodeClaim(newBalance.toString(), channel)
-    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account)
+    const clientChannel = account.getClientChannel()
+    const encodedClaim = util.encodeClaim(newBalance.toString(), clientChannel)
+    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
     debug(`signing outgoing claim for ${newBalance.toString()} drops on ` +
-      `channel ${channel}`)
+      `channel ${clientChannel}`)
 
     const aboveThreshold = new BigNumber(util
-      .xrpToDrops(this._clientPaychans.get(account).amount))
+      .xrpToDrops(account.getClientPaychan().amount)
       .minus(OUTGOING_CHANNEL_DEFAULT_AMOUNT / 2)
-      .lessThan(newBalance.toString())
+      .lessThan(newBalance.toString()))
 
-    // if the claim we're signing is for more than half the channel's balance, add some funds
-    // TODO: can there be multiple funding transactions in flight?
-    // TODO: should the amount of funding ramp up or go linearly?
-    if (!this._funding.get(account) && aboveThreshold) {
-      debug('adding funds to channel for account', account)
-      this._funding.set(account, true)
+    // if the claim we're signing is for more than the channel's max balance
+    // minus half the minimum balance, add some funds
+    if (!account.isFunding() && aboveThreshold) {
+      debug('adding funds to channel. account=', account.getAccount())
+      account.setFunding(true)
       util.fundChannel({
         api: this._api,
-        channel: channel,
+        channel: clientChannel,
         address: this._address,
         secret: this._secret,
         // TODO: configurable fund amount?
         amount: OUTGOING_CHANNEL_DEFAULT_AMOUNT
       })
         .then(async () => {
-          this._funding.set(account, false)
-          debug('completed fund tx for account', account)
-          await this._call(this._prefix + account, {
+          account.setFunding(false)
+          debug('completed fund tx. account=', account.getAccount())
+          await this._call(to, {
             type: BtpPacket.TYPE_MESSAGE,
             requestId: await util._requestId(),
             data: { protocolData: [{
               protocolName: 'channel',
               contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
-              data: Buffer.from(channel, 'hex')
+              data: Buffer.from(clientChannel, 'hex')
             }] }
           })
         })
         .catch((e) => {
           debug('funding tx/notify failed:', e)
-          this._funding.set(account, false)
+          account.setFunding(false)
         })
     }
 
@@ -622,20 +586,21 @@ class Plugin extends MiniAccountsPlugin {
 
   _handleClaim (account, claim) {
     let valid = false
-    const channel = this._balances.get(account + ':channel')
-    const paychan = this._paychans.get(account)
+
+    // TODO: if the channel somehow is null, make sure this behaves OK
     const { amount, signature } = claim
-    const encodedClaim = util.encodeClaim(amount, channel)
+    const encodedClaim = util.encodeClaim(amount, account.getChannel())
 
     try {
       valid = nacl.sign.detached.verify(
         encodedClaim,
         Buffer.from(signature, 'hex'),
-        Buffer.from(paychan.publicKey.substring(2), 'hex')
+        Buffer.from(account.getPaychan().publicKey.substring(2), 'hex')
       )
     } catch (err) {
       debug('verifying signature failed:', err.message)
     }
+
     // TODO: better reconciliation if claims are invalid
     if (!valid) {
       debug(`got invalid claim signature ${signature} for amount ${amount} drops`)
@@ -645,7 +610,7 @@ class Plugin extends MiniAccountsPlugin {
     }
 
     // validate claim against balance
-    const channelBalance = util.xrpToDrops(paychan.amount)
+    const channelBalance = util.xrpToDrops(account.getPaychan().amount)
     if (new BigNumber(amount).gt(channelBalance)) {
       const message = 'got claim for amount higher than channel balance. amount: ' + amount + ', incoming channel balance: ' + channelBalance
       debug(message)
@@ -653,16 +618,15 @@ class Plugin extends MiniAccountsPlugin {
       throw new Error('Invalid claim: claim amount (' + amount + ') exceeds channel balance (' + channelBalance + ')')
     }
 
-    const lastClaim = this._getLastClaim(account)
-    const lastValue = new BigNumber(lastClaim.amount)
+    const lastValue = account.getIncomingClaim().amount
     if (lastValue.lt(amount)) {
-      this._balances.set(account + ':claim', JSON.stringify(claim))
+      debug('set new claim for amount', amount)
+      account.setIncomingClaim(JSON.stringify(claim))
     }
-    debug('set new claim for amount', amount)
   }
 
   _handleMoney (from, btpData) {
-    const account = ilpAddressToAccount(this._prefix, from)
+    const account = this._getAccount(from)
 
     // TODO: match the transfer amount
     const [ jsonClaim ] = btpData.data.protocolData
@@ -677,13 +641,10 @@ class Plugin extends MiniAccountsPlugin {
     this._handleClaim(account, claim)
   }
 
-  _getLastClaim (account) {
-    return JSON.parse(this._balances.get(account + ':claim') || '{"amount":"0"}')
-  }
-
   async _disconnect () {
-    for (const interval of this._claimIntervalIds) {
-      clearInterval(interval)
+    for (const account of this._accounts.values()) {
+      if (!account.getClaimIntervalId())
+      clearInterval(account.getClaimIntervalId())
     }
   }
 }
