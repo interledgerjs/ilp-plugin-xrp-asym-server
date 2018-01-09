@@ -140,7 +140,7 @@ class Plugin extends MiniAccountsPlugin {
     const balance = account.getBalance()
     const channel = account.getClientChannel()
     const encodedClaim = util.encodeClaim(balance.toString(), channel)
-    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account)
+    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
@@ -198,7 +198,7 @@ class Plugin extends MiniAccountsPlugin {
     const outgoingAccount = primary.data.toString() 
 
     debug('creating outgoing channel fund transaction')
-    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account)
+    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const txTag = util.randomTag()
     const tx = await this._api.preparePaymentChannelCreate(this._address, {
@@ -523,9 +523,9 @@ class Plugin extends MiniAccountsPlugin {
     const account = this._getAccount(to)
     // TODO: do we need to connect this account?
 
-    const currentBalance = account.getBalance()
+    const currentBalance = account.getOutgoingBalance()
     const newBalance = currentBalance.add(transferAmount)
-    account.setBalance(newBalance.toString())
+    account.setOutgoingBalance(newBalance.toString())
     debug(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
 
     // sign a claim
