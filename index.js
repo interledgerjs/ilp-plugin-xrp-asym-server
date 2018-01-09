@@ -48,6 +48,7 @@ class Plugin extends MiniAccountsPlugin {
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
 
+    this._channelToAccount = new Map()
     this._accounts = new Map()
   }
 
@@ -99,7 +100,7 @@ class Plugin extends MiniAccountsPlugin {
       channel: account.getChannel(),
       clientChannel: account.getClientChannel(),
       address: this._address,
-      account: from
+      account: this._prefix + account.getAccount()
     }
   }
 
@@ -508,8 +509,8 @@ class Plugin extends MiniAccountsPlugin {
         })
         .catch((e) => {
           debug(`failed to pay account.
-            destination=${data}
-            error=${e.message}`)
+            destination=${destination}
+            error=${e && e.stack}`)
         })
     }
   }
@@ -538,9 +539,9 @@ class Plugin extends MiniAccountsPlugin {
       `channel ${clientChannel}`)
 
     const aboveThreshold = new BigNumber(util
-      .xrpToDrops(account.getClientPaychan().amount)
+      .xrpToDrops(account.getClientPaychan().amount))
       .minus(OUTGOING_CHANNEL_DEFAULT_AMOUNT / 2)
-      .lessThan(newBalance.toString()))
+      .lessThan(newBalance.toString())
 
     // if the claim we're signing is for more than the channel's max balance
     // minus half the minimum balance, add some funds
@@ -618,7 +619,7 @@ class Plugin extends MiniAccountsPlugin {
       throw new Error('Invalid claim: claim amount (' + amount + ') exceeds channel balance (' + channelBalance + ')')
     }
 
-    const lastValue = account.getIncomingClaim().amount
+    const lastValue = new BigNumber(account.getIncomingClaim().amount)
     if (lastValue.lt(amount)) {
       debug('set new claim for amount', amount)
       account.setIncomingClaim(JSON.stringify(claim))

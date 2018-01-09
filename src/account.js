@@ -1,3 +1,5 @@
+const BigNumber = require('bignumber.js')
+
 const BALANCE = a => a
 const INCOMING_CLAIM = a => a + ':claim'
 const CHANNEL = a => a + ':channel'
@@ -85,7 +87,7 @@ class Account {
   }
 
   getBalance () {
-    return new BigNumber(this._store.get(BALANCE(this._account)))
+    return new BigNumber(this._store.get(BALANCE(this._account)) || '0')
   }
 
   getIncomingClaim () {
@@ -127,7 +129,7 @@ class Account {
   }
 
   async setClientChannel (clientChannel) {
-    this._clientPaychans = await this._api.getPaymentChannel(clientChannelId)
+    this._clientPaychan = await this._api.getPaymentChannel(clientChannel)
     return this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
   }
 
