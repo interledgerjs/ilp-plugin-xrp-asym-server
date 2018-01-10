@@ -1,3 +1,5 @@
+'use strict'
+
 const crypto = require('crypto')
 const IlpPacket = require('ilp-packet')
 const { Writer } = require('oer-utils')
