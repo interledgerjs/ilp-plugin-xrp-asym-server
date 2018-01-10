@@ -1,17 +1,12 @@
 const crypto = require('crypto')
 const IlpPacket = require('ilp-packet')
-const { Reader, Writer } = require('oer-utils')
-const addressCodec = require('ripple-address-codec')
+const { Writer } = require('oer-utils')
 const nacl = require('tweetnacl')
 const { RippleAPI } = require('ripple-lib')
 const BtpPacket = require('btp-packet')
 const BigNumber = require('bignumber.js')
-const WebSocket = require('ws')
-const assert = require('assert')
 const debug = require('debug')('ilp-plugin-xrp-server')
 const MiniAccountsPlugin = require('ilp-plugin-mini-accounts')
-const base64url = require('base64url')
-const bignum = require('bignum')
 const OUTGOING_CHANNEL_DEFAULT_AMOUNT = Math.pow(10, 6) // 1 XRP
 const MIN_INCOMING_CHANNEL = 10000000
 const CHANNEL_KEYS = 'ilp-plugin-multi-xrp-paychan-channel-keys'
@@ -22,10 +17,6 @@ const {
   util,
   ChannelWatcher
 } = require('ilp-plugin-xrp-paychan-shared')
-
-function tokenToAccount (token) {
-  return base64url(crypto.createHash('sha256').update(token).digest('sha256'))
-}
 
 function ilpAddressToAccount (prefix, ilpAddress) {
   if (ilpAddress.substr(0, prefix.length) !== prefix) {
@@ -84,7 +75,7 @@ class Plugin extends MiniAccountsPlugin {
     let account = this._accounts.get(accountName)
 
     if (!account) {
-      account = new Account({ 
+      account = new Account({
         account: accountName,
         store: this._store,
         api: this._api
@@ -106,7 +97,6 @@ class Plugin extends MiniAccountsPlugin {
 
   async _channelClaim (account) {
     debug('creating claim for claim. account=' + account.getAccount())
-    const balance = account.getBalance()
     const channel = account.getChannel()
     const claim = account.getIncomingClaim()
     const publicKey = account.getPaychan().publicKey
@@ -195,7 +185,7 @@ class Plugin extends MiniAccountsPlugin {
     // TODO: some way to do this via account class
     this._store.setCache(account + ':client_channel', true)
 
-    const outgoingAccount = primary.data.toString() 
+    const outgoingAccount = primary.data.toString()
 
     debug('creating outgoing channel fund transaction')
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
@@ -367,7 +357,7 @@ class Plugin extends MiniAccountsPlugin {
           this._rejectIncomingTransfer(account, ilp.data)
         } else if (response[0] === IlpPacket.Type.TYPE_ILP_FULFILL) {
           // TODO: should await, or no?
-          const { amount, destination, data } = IlpPacket.deserializeIlpPrepare(ilp.data)
+          const { amount } = IlpPacket.deserializeIlpPrepare(ilp.data)
           if (amount !== '0' && this._moneyHandler) this._moneyHandler(amount)
         }
       }
@@ -408,31 +398,25 @@ class Plugin extends MiniAccountsPlugin {
     await new Promise((resolve) => setTimeout(resolve, expiresAt - Date.now()))
     return isPrepare
       ? IlpPacket.serializeIlpReject({
-          code: 'F00',
-          triggeredBy: this._prefix, // TODO: is that right?
-          message: 'expired at ' + new Date().toISOString(),
-          data: Buffer.from('')
-        })
+        code: 'F00',
+        triggeredBy: this._prefix, // TODO: is that right?
+        message: 'expired at ' + new Date().toISOString(),
+        data: Buffer.from('')
+      })
       : IlpPacket.serializeIlpError({
-          code: 'F00',
-          name: 'Bad Request',
-          triggeredBy: this._prefix + account.getAccount(),
-          forwardedBy: [],
-          triggeredAt: new Date(),
-          data: JSON.stringify({
-            message: `request timed out after ${DEFAULT_TIMEOUT} ms`
-          })
+        code: 'F00',
+        name: 'Bad Request',
+        triggeredBy: this._prefix + account.getAccount(),
+        forwardedBy: [],
+        triggeredAt: new Date(),
+        data: JSON.stringify({
+          message: `request timed out after ${DEFAULT_TIMEOUT} ms`
         })
+      })
   }
 
   _handleIncomingPrepare (account, ilpData) {
-    const {
-      amount,
-      executionCondition,
-      expiresAt,
-      destination,
-      data
-    } = IlpPacket.deserializeIlpPrepare(ilpData)
+    const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
 
     if (!account.getPaychan()) {
       throw new Error(`Incoming traffic won't be accepted until a channel
@@ -488,7 +472,7 @@ class Plugin extends MiniAccountsPlugin {
         .equals(preparePacket.data.executionCondition)) {
           // TODO: could this leak data if the fulfillment is wrong in
           // a predictable way?
-          throw new Error(`condition and fulfillment don\'t match.
+        throw new Error(`condition and fulfillment don't match.
             condition=${preparePacket.data.executionCondition}
             fulfillment=${parsedResponse.data.fulfillment}`)
       }
@@ -605,8 +589,8 @@ class Plugin extends MiniAccountsPlugin {
     // TODO: better reconciliation if claims are invalid
     if (!valid) {
       debug(`got invalid claim signature ${signature} for amount ${amount} drops`)
-      /*throw new Error('got invalid claim signature ' +
-        signature + ' for amount ' + amount + ' drops')*/
+      /* throw new Error('got invalid claim signature ' +
+        signature + ' for amount ' + amount + ' drops') */
       throw new Error('Invalid claim: invalid signature')
     }
 
@@ -615,7 +599,7 @@ class Plugin extends MiniAccountsPlugin {
     if (new BigNumber(amount).gt(channelBalance)) {
       const message = 'got claim for amount higher than channel balance. amount: ' + amount + ', incoming channel balance: ' + channelBalance
       debug(message)
-      //throw new Error(message)
+      // throw new Error(message)
       throw new Error('Invalid claim: claim amount (' + amount + ') exceeds channel balance (' + channelBalance + ')')
     }
 
@@ -636,7 +620,7 @@ class Plugin extends MiniAccountsPlugin {
 
     if (!claim) {
       debug('no claim was supplied on transfer')
-      throw new Error('No claim was supplied on transfer') 
+      throw new Error('No claim was supplied on transfer')
     }
 
     this._handleClaim(account, claim)
@@ -644,8 +628,7 @@ class Plugin extends MiniAccountsPlugin {
 
   async _disconnect () {
     for (const account of this._accounts.values()) {
-      if (!account.getClaimIntervalId())
-      clearInterval(account.getClaimIntervalId())
+      if (!account.getClaimIntervalId()) { clearInterval(account.getClaimIntervalId()) }
     }
   }
 }

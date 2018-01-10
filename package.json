@@ -4,7 +4,8 @@
   "description": "Asymmetric XRP paychan server for ILP",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "standard"
   },
   "author": "",
   "license": "ISC",
@@ -22,5 +23,8 @@
     "ripple-lib": "^0.17.9",
     "tweetnacl": "^1.0.0",
     "ws": "^4.0.0"
+  },
+  "devDependencies": {
+    "standard": "^10.0.3"
   }
 }
