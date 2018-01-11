@@ -1,3 +1,5 @@
+'use strict'
+
 const BigNumber = require('bignumber.js')
 
 const BALANCE = a => a
@@ -20,9 +22,9 @@ class Account {
     this._lastClaimedAmount = null
     this._claimIntervalId = null
   }
-  
+
   getAccount () {
-    return this._account    
+    return this._account
   }
 
   getPaychan () {
@@ -46,7 +48,7 @@ class Account {
   }
 
   setLastClaimedAmount (amount) {
-    this._lastClaimedAmount = amount 
+    this._lastClaimedAmount = amount
   }
 
   isFunding () {
@@ -64,7 +66,7 @@ class Account {
       this._store.load(CHANNEL(this._account)),
       this._store.load(IS_BLOCKED(this._account)),
       this._store.load(CLIENT_CHANNEL(this._account)),
-      this._store.load(OUTGOING_BALANCE(this._account)),
+      this._store.load(OUTGOING_BALANCE(this._account))
     ])
 
     if (this.getChannel()) {
