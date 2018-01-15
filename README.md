@@ -26,7 +26,7 @@ const serverPlugin = new IlpPluginXrpAsymServer({
   xrpServer: 'wss://s.altnet.rippletest.net:51233',
 
   // Max amount to be unsecured at any one time
-  bandwidth: 1000000,
+  maxBalance: 1000000,
 
   // Persistent Key-value store. ILP-Connector will pass
   // this parameter in automatically.
