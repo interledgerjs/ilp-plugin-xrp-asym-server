@@ -296,11 +296,15 @@ class Plugin extends MiniAccountsPlugin {
       }
 
       const encodedChannelProof = util.encodeChannelProof(channel, account.getAccount())
-      nacl.sign.detached.verify(
+      const isValid = nacl.sign.detached.verify(
         encodedChannelProof,
         channelSignatureProtocol.data,
         Buffer.from(paychan.publicKey.substring(2), 'hex')
       )
+      if (!isValid) {
+        throw new Error(`invalid signature for proving channel ownership. ` + 
+          `account=${account.getAccount()} channelId=${channel}`)
+      }
 
       this._validatePaychanDetails(paychan)
       this._channelToAccount.set(channel, account)
