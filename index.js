@@ -295,7 +295,8 @@ class Plugin extends MiniAccountsPlugin {
           different account. account=${account} associated=${accountForChannel}`)
       }
 
-      const encodedChannelProof = util.encodeChannelProof(channel, account.getAccount())
+      const fullAccount = this._prefix + account.getAccount()
+      const encodedChannelProof = util.encodeChannelProof(channel, fullAccount)
       const isValid = nacl.sign.detached.verify(
         encodedChannelProof,
         channelSignatureProtocol.data,
