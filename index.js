@@ -290,9 +290,9 @@ class Plugin extends MiniAccountsPlugin {
       // TODO: factor reverse-channel lookup into other class?
       await this._store.load('channel:' + channel)
       const accountForChannel = this._store.get('channel:' + channel)
-      if (accountForChannel && channel !== accountForChannel) {
+      if (accountForChannel && account.getAccount() !== accountForChannel._account) {
         throw new Error(`this channel has already been associated with a
-          different account. account=${account} associated=${accountForChannel}`)
+          different account. account=${account.getAccount()} associated=${accountForChannel._account}`)
       }
 
       const fullAccount = this._prefix + account.getAccount()
@@ -303,7 +303,7 @@ class Plugin extends MiniAccountsPlugin {
         Buffer.from(paychan.publicKey.substring(2), 'hex')
       )
       if (!isValid) {
-        throw new Error(`invalid signature for proving channel ownership. ` + 
+        throw new Error(`invalid signature for proving channel ownership. ` +
           `account=${account.getAccount()} channelId=${channel}`)
       }
 
