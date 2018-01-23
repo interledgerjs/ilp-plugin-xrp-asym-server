@@ -8,7 +8,10 @@ class StoreWrapper {
   async load (key) {
     if (!this._store) return
     if (this._cache.get(key)) return
-    this._cache.set(key, await this._store.get(key))
+    const value = await this._store.get(key)
+
+    // once the call to the store returns, double-check that the cache is still empty.
+    if (!this._cache.get(key)) this._cache.set(key, value)
   }
 
   get (key) {
