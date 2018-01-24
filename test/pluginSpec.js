@@ -11,6 +11,10 @@ const PluginBtp = require('ilp-plugin-btp')
 const PluginXrpAsymServer = require('..')
 const Store = require('./util/memStore')
 
+const { RippleAPI } = require('ripple-lib')
+const fakeApi = new RippleAPI({ server: 'wss://s.altnet.rippletest.net:51233' })
+fakeApi.disconnect = () => {}
+
 describe('pluginSpec', () => {
   beforeEach(async function () {
     this.timeout(10000)
@@ -29,6 +33,7 @@ describe('pluginSpec', () => {
         assetCode: 'XRP'
       }
     })
+    this.plugin._api = fakeApi
 
     debug('connecting plugin')
     await this.plugin.connect()
