@@ -4,7 +4,7 @@
   "description": "Asymmetric XRP paychan server for ILP",
   "main": "index.js",
   "scripts": {
-    "test": "nyc mocha --exit",
+    "test": "nyc --reporter=lcov mocha --exit",
     "lint": "standard"
   },
   "author": "",
