@@ -653,9 +653,12 @@ class Plugin extends MiniAccountsPlugin {
   }
 
   async _disconnect () {
+    debug('disconnecting accounts and api')
     for (const account of this._accounts.values()) {
       if (!account.getClaimIntervalId()) { clearInterval(account.getClaimIntervalId()) }
     }
+    this._api.connection.removeAllListeners()
+    await this._api.disconnect()
   }
 }
 
