@@ -117,7 +117,7 @@ class Plugin extends MiniAccountsPlugin {
     debug('submitting claim transaction. tx=', tx, ' account=' + account.getAccount())
     const {resultCode, resultMessage} = await this._api.submit(signedTx.signedTransaction)
     if (resultCode !== 'tesSUCCESS') {
-      console.error('WARNING: Error submitting close: ', resultMessage)
+      throw new Error('Error submitting claim: ' + resultMessage)
     }
   }
 
@@ -401,7 +401,7 @@ class Plugin extends MiniAccountsPlugin {
       if (new BigNumber(lastClaimedAmount).lt(amount)) {
         debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
         account.setLastClaimedAmount(amount)
-        await this._channelClaim(account)
+        await this._channelClaim(account).catch(e => console.error('WARNING:', e.message))
         debug('claimed funds. account=' + account.getAccount())
       }
     }, this._claimInterval))
@@ -491,11 +491,12 @@ class Plugin extends MiniAccountsPlugin {
           // TODO: could this leak data if the fulfillment is wrong in
           // a predictable way?
         throw new Error(`condition and fulfillment don't match.
-            condition=${preparePacket.data.executionCondition}
-            fulfillment=${parsedResponse.data.fulfillment}`)
+            condition=${preparePacket.data.executionCondition.toString('hex')}
+            fulfillment=${parsedResponse.data.fulfillment.toString('hex')}`)
       }
 
       // send off a transfer in the background to settle
+      debug('validated fulfillment. paying settlement.')
       util._requestId()
         .then((requestId) => {
           return this._call(destination, {
@@ -639,16 +640,20 @@ class Plugin extends MiniAccountsPlugin {
     debug('handling money. account=' + account)
 
     // TODO: match the transfer amount
+    const protocolData = btpData.data.protocolData
+    if (!protocolData.length) {
+      throw new Error('got transfer with empty protocolData.' +
+        ' requestId=' + btpData.requestId)
+    }
+
     const [ jsonClaim ] = btpData.data.protocolData
       .filter(p => p.protocolName === 'claim')
-    const claim = JSON.parse(jsonClaim.data.toString())
-
-    if (!claim) {
+    if (!jsonClaim || !jsonClaim.data.length) {
       debug('no claim was supplied on transfer')
       throw new Error('No claim was supplied on transfer')
     }
 
-    debug('calling handleClaim.')
+    const claim = JSON.parse(jsonClaim.data.toString())
     this._handleClaim(account, claim)
   }
 
