@@ -10,7 +10,6 @@ const assert = chai.assert
 const sinon = require('sinon')
 const debug = require('debug')('ilp-plugin-xrp-asym-server:test')
 
-const PluginBtp = require('ilp-plugin-btp')
 const PluginXrpAsymServer = require('..')
 const Store = require('./util/memStore')
 
@@ -125,11 +124,11 @@ describe('pluginSpec', () => {
         })
 
         return assert.isRejected(this.plugin._handleCustomData(this.from, this.channelProtocol),
-          'this channel has already been associated with a different account. ' + 
+          'this channel has already been associated with a different account. ' +
           'account=35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak associated=some_other_account')
       })
 
-      it('don\'t throw if an account associates the same paychan again' , async function () {
+      it('don\'t throw if an account associates the same paychan again', async function () {
         const sendChannelProof = () => this.plugin._handleCustomData(this.from, this.channelProtocol)
         return assert.isFulfilled(Promise.all([sendChannelProof(), sendChannelProof()]))
       })
@@ -200,7 +199,7 @@ describe('pluginSpec', () => {
         amount: '12345',
         signature: 'foo'
       }))
-      this.account._paychan = { publicKey: 'bar' }
+      this.account._paychan = { publicKey: 'bar', balance: '0' }
     })
 
     it('should create a fund transaction with proper parameters', async function () {
@@ -209,7 +208,7 @@ describe('pluginSpec', () => {
       const submitStub = this.sinon.stub(this.plugin._api, 'submit').returns(Promise.resolve({
         resultCode: 'tesSUCCESS'
       }))
-  
+
       await this.plugin._channelClaim(this.account)
       assert.isTrue(prepStub.calledWith(this.plugin._address, {
         balance: '0.012345',
@@ -222,13 +221,13 @@ describe('pluginSpec', () => {
     })
 
     it('should give an error if submit fails', async function () {
-      const prepStub = this.sinon.stub(this.plugin._api, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
-      const signStub = this.sinon.stub(this.plugin._api, 'sign').returns({ signedTransaction: 'abc' })
-      const submitStub = this.sinon.stub(this.plugin._api, 'submit').returns(Promise.resolve({
+      this.sinon.stub(this.plugin._api, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
+      this.sinon.stub(this.plugin._api, 'sign').returns({ signedTransaction: 'abc' })
+      this.sinon.stub(this.plugin._api, 'submit').returns(Promise.resolve({
         resultCode: 'temMALFORMED',
         resultMessage: 'malformed'
       }))
-  
+
       await assert.isRejected(
         this.plugin._channelClaim(this.account),
         'Error submitting claim: malformed')
@@ -260,7 +259,7 @@ describe('pluginSpec', () => {
 
     it('should throw error if no claim protocol is present', function () {
       assert.throws(
-        () => this.plugin._handleMoney(this.from, { requestId: 10, data: { protocolData: [] }}),
+        () => this.plugin._handleMoney(this.from, { requestId: 10, data: { protocolData: [] } }),
         'got transfer with empty protocolData. requestId=10')
     })
 
@@ -287,7 +286,7 @@ describe('pluginSpec', () => {
       beforeEach(function () {
         this.claim = {
           amount: 12345,
-          signature: 'foo'          
+          signature: 'foo'
         }
       })
 
@@ -300,7 +299,7 @@ describe('pluginSpec', () => {
       it('should throw if the signature is for a higher amount than the channel max', function () {
         this.claim.amount = 1000001
         // This stub works because require uses a cache
-        const stub = this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
+        this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
           .returns(true)
 
         assert.throws(
@@ -310,25 +309,25 @@ describe('pluginSpec', () => {
 
       it('should not save the claim if it is lower than the previous', function () {
         // This stub works because require uses a cache
-        const stub = this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
+        this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
           .returns(true)
 
         const spy = this.sinon.spy(this.account, 'setIncomingClaim')
         this.plugin._handleClaim(this.account, this.claim)
-        
+
         assert.isFalse(spy.called)
-        //assert.isTrue(spy.calledWith(JSON.stringify(this.claim)))
+        // assert.isTrue(spy.calledWith(JSON.stringify(this.claim)))
       })
 
       it('should save the claim if it is higher than the previous', function () {
         // This stub works because require uses a cache
         this.claim.amount = 123456
-        const stub = this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
+        this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
           .returns(true)
 
         const spy = this.sinon.spy(this.account, 'setIncomingClaim')
         this.plugin._handleClaim(this.account, this.claim)
-        
+
         assert.isTrue(spy.calledWith(JSON.stringify(this.claim)))
       })
     })
@@ -370,7 +369,7 @@ describe('pluginSpec', () => {
 
         assert.equal(claim.protocolName, 'claim')
         assert.equal(claim.contentType, 2)
-        
+
         const parsed = JSON.parse(claim.data.toString())
         assert.equal(Number(parsed.amount), oldAmount + 100)
       })
@@ -470,7 +469,7 @@ describe('pluginSpec', () => {
     })
 
     it('should handle a prepare response on which transfer fails', async function () {
-      const stub = this.sinon.stub(this.plugin, '_call')
+      this.sinon.stub(this.plugin, '_call')
         .returns(Promise.reject(new Error('no')))
 
       this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
