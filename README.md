@@ -18,7 +18,7 @@ const serverPlugin = new IlpPluginXrpAsymServer({
   // Port on which to listen
   port: 6666,
 
-  // XRP credentials of the server
+  // XRP credentials of the server 
   address: 'rKzfaLjeVZXasCSU2heTUGw9VhQmFNSd8k',
   secret: 'snHNnoL6S67wNvydcZg9y9bFzPZwG',
 
