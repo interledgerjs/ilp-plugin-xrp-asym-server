@@ -126,6 +126,12 @@ class Account {
     return this._store.set(CHANNEL(this._account), channel)
   }
 
+  deleteChannel () {
+    delete this._paychan
+    delete this._lastClaimedAmount
+    return this._store.delete(CHANNEL(this._account))
+  }
+
   block (isBlocked = true) {
     return this._store.set(IS_BLOCKED(this._account), isBlocked)
   }

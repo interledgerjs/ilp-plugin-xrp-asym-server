@@ -170,9 +170,14 @@ class Plugin extends MiniAccountsPlugin {
 
     const existingChannel = account.getChannel()
     if (existingChannel) {
-      this._validatePaychanDetails(account.getPaychan())
-      this._channelToAccount.set(existingChannel, account)
-      await this._registerAutoClaim(account)
+      try {
+        this._validatePaychanDetails(account.getPaychan())
+        this._channelToAccount.set(existingChannel, account)
+        await this._registerAutoClaim(account)
+      } catch (e) {
+        debug('deleting channel because of failed validate. error=', e)
+        account.deleteChannel()
+      }
     }
 
     return null
