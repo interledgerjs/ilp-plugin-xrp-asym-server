@@ -70,12 +70,16 @@ class Account {
     ])
 
     if (this.getChannel()) {
+      // hold empty paychan details if the channel no longer exists.
+      // the channel will be cleaned up after failing validation.
       this._paychan = await this._api.getPaymentChannel(this.getChannel())
+        .catch(() => ({}))
       this._lastClaimedAmount = this._paychan.balance
     }
 
     if (this.getClientChannel()) {
       this._clientPaychan = await this._api.getPaymentChannel(this.getClientChannel())
+        .catch(() => ({}))
     }
   }
 
