@@ -176,7 +176,13 @@ class Plugin extends MiniAccountsPlugin {
         await this._registerAutoClaim(account)
       } catch (e) {
         debug('deleting channel because of failed validate. error=', e)
-        account.deleteChannel()
+        try {
+          await this._channelClaim(account)
+          account.deleteChannel()
+        } catch (err) {
+          debug('could not delete channel. error=', err)
+          // should the account be blocked?
+        }
       }
     }
 
