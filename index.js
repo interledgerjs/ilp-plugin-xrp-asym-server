@@ -593,6 +593,7 @@ class Plugin extends MiniAccountsPlugin {
     // TODO: if the channel somehow is null, make sure this behaves OK
     const { amount, signature } = claim
     const encodedClaim = util.encodeClaim(amount, account.getChannel())
+    debug('handling claim. account=' + account, 'amount=' + amount)
 
     try {
       valid = nacl.sign.detached.verify(
@@ -614,6 +615,7 @@ class Plugin extends MiniAccountsPlugin {
 
     // validate claim against balance
     const channelBalance = util.xrpToDrops(account.getPaychan().amount)
+    debug('got channel balance. balance=' + channelBalance)
     if (new BigNumber(amount).gt(channelBalance)) {
       const message = 'got claim for amount higher than channel balance. amount: ' + amount + ', incoming channel balance: ' + channelBalance
       debug(message)
@@ -622,14 +624,19 @@ class Plugin extends MiniAccountsPlugin {
     }
 
     const lastValue = new BigNumber(account.getIncomingClaim().amount)
+    debug('got last value. value=' + lastValue.toString(), 'signature=' + account.getIncomingClaim.signature)
     if (lastValue.lt(amount)) {
       debug('set new claim for amount', amount)
       account.setIncomingClaim(JSON.stringify(claim))
+    } else {
+      debug('last value is less than amount. lastValue=' + lastValue.toString(),
+        'amount=' + amount)
     }
   }
 
   _handleMoney (from, btpData) {
     const account = this._getAccount(from)
+    debug('handling money. account=' + account)
 
     // TODO: match the transfer amount
     const [ jsonClaim ] = btpData.data.protocolData
@@ -641,6 +648,7 @@ class Plugin extends MiniAccountsPlugin {
       throw new Error('No claim was supplied on transfer')
     }
 
+    debug('calling handleClaim.')
     this._handleClaim(account, claim)
   }
 
