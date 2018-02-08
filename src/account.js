@@ -97,7 +97,15 @@ class Account {
   }
 
   getIncomingClaim () {
-    return JSON.parse(this._store.get(INCOMING_CLAIM(this._account)) || '{"amount":"0"}')
+    const paychanAmount = new BigNumber(this._paychan ? this._paychan.balance : '0')
+    const storedClaim = JSON.parse(this._store.get(INCOMING_CLAIM(this._account)) ||
+      '{"amount":"0"}')
+
+    if (paychanAmount.gt(storedClaim.amount)) {
+      return { amount: paychanAmount }
+    } else {
+      return storedClaim
+    }
   }
 
   getChannel () {
