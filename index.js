@@ -328,7 +328,7 @@ class Plugin extends MiniAccountsPlugin {
     }
 
     if (fundChannel) {
-      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lessThan(MIN_INCOMING_CHANNEL)) {
+      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(MIN_INCOMING_CHANNEL)) {
         debug('denied outgoing paychan request; not enough has been escrowed')
         throw new Error('not enough has been escrowed in channel; must put ' +
           MIN_INCOMING_CHANNEL + ' drops on hold')
@@ -398,7 +398,7 @@ class Plugin extends MiniAccountsPlugin {
 
       debug('auto-claiming. account=' + account.getAccount(), 'amount=' + amount,
         'lastClaimedAmount=' + lastClaimedAmount)
-      if (new BigNumber(lastClaimedAmount).lessThan(amount)) {
+      if (new BigNumber(lastClaimedAmount).lt(amount)) {
         debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
         account.setLastClaimedAmount(amount)
         await this._channelClaim(account)
@@ -447,18 +447,18 @@ class Plugin extends MiniAccountsPlugin {
 
     const lastValue = account.getIncomingClaim().amount
     const prepared = account.getBalance()
-    const newPrepared = prepared.add(amount)
-    const unsecured = newPrepared.sub(lastValue)
+    const newPrepared = prepared.plus(amount)
+    const unsecured = newPrepared.minus(lastValue)
     debug(unsecured.toString(), 'unsecured; last claim is',
       lastValue.toString(), 'prepared amount', amount, 'newPrepared',
       newPrepared.toString(), 'prepared', prepared.toString())
 
-    if (unsecured.greaterThan(this._bandwidth)) {
+    if (unsecured.gt(this._bandwidth)) {
       throw new Error('Insufficient bandwidth, used: ' + unsecured + ' max: ' +
         this._bandwidth)
     }
 
-    if (newPrepared.greaterThan(util.xrpToDrops(account.getPaychan().amount))) {
+    if (newPrepared.gt(util.xrpToDrops(account.getPaychan().amount))) {
       throw new Error('Insufficient funds, have: ' +
         util.xrpToDrops(account.getPaychan().amount) +
         ' need: ' + newPrepared.toString())
@@ -471,7 +471,7 @@ class Plugin extends MiniAccountsPlugin {
   _rejectIncomingTransfer (account, ilpData) {
     const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
     const prepared = account.getBalance()
-    const newPrepared = prepared.sub(amount)
+    const newPrepared = prepared.minus(amount)
 
     account.setBalance(newPrepared.toString())
     debug(`account ${account.getAccount()} roll back ${amount} units, new balance ${newPrepared.toString()}`)
@@ -526,7 +526,7 @@ class Plugin extends MiniAccountsPlugin {
     // TODO: do we need to connect this account?
 
     const currentBalance = account.getOutgoingBalance()
-    const newBalance = currentBalance.add(transferAmount)
+    const newBalance = currentBalance.plus(transferAmount)
     account.setOutgoingBalance(newBalance.toString())
     debug(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
 
@@ -543,7 +543,7 @@ class Plugin extends MiniAccountsPlugin {
     const aboveThreshold = new BigNumber(util
       .xrpToDrops(account.getClientPaychan().amount))
       .minus(OUTGOING_CHANNEL_DEFAULT_AMOUNT / 2)
-      .lessThan(newBalance.toString())
+      .lt(newBalance.toString())
 
     // if the claim we're signing is for more than the channel's max balance
     // minus half the minimum balance, add some funds
