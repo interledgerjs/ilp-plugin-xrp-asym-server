@@ -593,6 +593,11 @@ class Plugin extends MiniAccountsPlugin {
 
     // TODO: if the channel somehow is null, make sure this behaves OK
     const { amount, signature } = claim
+    if (new BigNumber(amount).isNegative()) {
+      debug(`got claim for negative amount. signature=${signature} amount=${amount}`)
+      throw new Error('Invalid claim: negative amount')
+    }
+
     const encodedClaim = util.encodeClaim(amount, account.getChannel())
     debug('handling claim. account=' + account, 'amount=' + amount)
 
