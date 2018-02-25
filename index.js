@@ -37,7 +37,7 @@ class Plugin extends MiniAccountsPlugin {
     this._address = opts.address
     this._api = new RippleAPI({ server: this._xrpServer })
     this._watcher = new ChannelWatcher(10 * 60 * 1000, this._api)
-    this._bandwidth = opts.maxBalance || opts.bandwidth || 1000 // TODO: deprecate _bandwidth
+    this._bandwidth = opts.maxBalance || opts.bandwidth || 0 // TODO: deprecate _bandwidth
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
 
