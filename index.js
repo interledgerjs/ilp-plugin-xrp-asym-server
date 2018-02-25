@@ -2,6 +2,7 @@
 
 const crypto = require('crypto')
 const IlpPacket = require('ilp-packet')
+const { Errors } = IlpPacket
 const { Writer } = require('oer-utils')
 const nacl = require('tweetnacl')
 const { RippleAPI } = require('ripple-lib')
@@ -345,42 +346,46 @@ class Plugin extends MiniAccountsPlugin {
 
     // in the case of an ilp message, we behave as a connector
     if (ilp) {
-      if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE) {
-        this._handleIncomingPrepare(account, ilp.data)
-      }
-
-      // TODO: don't do this, use connector only instead
-      if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE && IlpPacket.deserializeIlpPrepare(ilp.data).destination === 'peer.config') {
-        const writer = new Writer()
-        const response = this._prefix + account.getAccount()
-        writer.writeVarOctetString(Buffer.from(response))
-
-        return [{
-          protocolName: 'ilp',
-          contentType: BtpPacket.MIME_APPLICATION_OCTET_STRING,
-          data: IlpPacket.serializeIlpFulfill({
-            fulfillment: Buffer.alloc(32),
-            data: writer.getBuffer()
-          })
-        }]
-      }
-
-      let response = await Promise.race([
-        this._dataHandler(ilp.data),
-        this._expireData(account, ilp.data)
-      ])
-
-      if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE) {
-        if (response[0] === IlpPacket.Type.TYPE_ILP_REJECT) {
-          this._rejectIncomingTransfer(account, ilp.data)
-        } else if (response[0] === IlpPacket.Type.TYPE_ILP_FULFILL) {
-          // TODO: should await, or no?
-          const { amount } = IlpPacket.deserializeIlpPrepare(ilp.data)
-          if (amount !== '0' && this._moneyHandler) this._moneyHandler(amount)
+      try {
+        if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE) {
+          this._handleIncomingPrepare(account, ilp.data)
         }
-      }
 
-      return this.ilpAndCustomToProtocolData({ ilp: response })
+        // TODO: don't do this, use connector only instead
+        if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE && IlpPacket.deserializeIlpPrepare(ilp.data).destination === 'peer.config') {
+          const writer = new Writer()
+          const response = this._prefix + account.getAccount()
+          writer.writeVarOctetString(Buffer.from(response))
+
+          return [{
+            protocolName: 'ilp',
+            contentType: BtpPacket.MIME_APPLICATION_OCTET_STRING,
+            data: IlpPacket.serializeIlpFulfill({
+              fulfillment: Buffer.alloc(32),
+              data: writer.getBuffer()
+            })
+          }]
+        }
+
+        let response = await Promise.race([
+          this._dataHandler(ilp.data),
+          this._expireData(account, ilp.data)
+        ])
+
+        if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE) {
+          if (response[0] === IlpPacket.Type.TYPE_ILP_REJECT) {
+            this._rejectIncomingTransfer(account, ilp.data)
+          } else if (response[0] === IlpPacket.Type.TYPE_ILP_FULFILL) {
+            // TODO: should await, or no?
+            const { amount } = IlpPacket.deserializeIlpPrepare(ilp.data)
+            if (amount !== '0' && this._moneyHandler) this._moneyHandler(amount)
+          }
+        }
+
+        return this.ilpAndCustomToProtocolData({ ilp: response })
+      } catch (e) {
+        return this.ilpAndCustomToProtocolData({ ilp: IlpPacket.errorToReject(e) })
+      }
     }
 
     return []
@@ -420,14 +425,14 @@ class Plugin extends MiniAccountsPlugin {
     await new Promise((resolve) => setTimeout(resolve, expiresAt - Date.now()))
     return isPrepare
       ? IlpPacket.serializeIlpReject({
-        code: 'F00',
+        code: 'R00',
         triggeredBy: this._prefix, // TODO: is that right?
         message: 'expired at ' + new Date().toISOString(),
         data: Buffer.from('')
       })
       : IlpPacket.serializeIlpError({
-        code: 'F00',
-        name: 'Bad Request',
+        code: 'R00',
+        name: 'Transfer Timed Out',
         triggeredBy: this._prefix + account.getAccount(),
         forwardedBy: [],
         triggeredAt: new Date(),
@@ -441,12 +446,12 @@ class Plugin extends MiniAccountsPlugin {
     const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
 
     if (!account.getPaychan()) {
-      throw new Error(`Incoming traffic won't be accepted until a channel
+      throw new Errors.UnreachableError(`Incoming traffic won't be accepted until a channel
         to the connector is established.`)
     }
 
     if (account.isBlocked()) {
-      throw new Error('This account has been closed.')
+      throw new Errors.UnreachableError('This account has been closed.')
     }
 
     const lastValue = account.getIncomingClaim().amount
@@ -458,12 +463,13 @@ class Plugin extends MiniAccountsPlugin {
       newPrepared.toString(), 'prepared', prepared.toString())
 
     if (unsecured.gt(this._bandwidth)) {
-      throw new Error('Insufficient bandwidth, used: ' + unsecured + ' max: ' +
+      throw new Errors.InsufficientLiquidityError('Insufficient bandwidth, used: ' +
+        unsecured + ' max: ' +
         this._bandwidth)
     }
 
     if (newPrepared.gt(util.xrpToDrops(account.getPaychan().amount))) {
-      throw new Error('Insufficient funds, have: ' +
+      throw new Errors.InsufficientLiquidityError('Insufficient funds, have: ' +
         util.xrpToDrops(account.getPaychan().amount) +
         ' need: ' + newPrepared.toString())
     }
@@ -494,7 +500,7 @@ class Plugin extends MiniAccountsPlugin {
         .equals(preparePacket.data.executionCondition)) {
           // TODO: could this leak data if the fulfillment is wrong in
           // a predictable way?
-        throw new Error(`condition and fulfillment don't match.
+        throw new Errors.WrongConditionError(`condition and fulfillment don't match.
             condition=${preparePacket.data.executionCondition.toString('hex')}
             fulfillment=${parsedResponse.data.fulfillment.toString('hex')}`)
       }
