@@ -396,6 +396,88 @@ describe('pluginSpec', () => {
     })
   })
 
+  describe('handle custom data', () => {
+    beforeEach(async function () {
+      this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
+      this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      this.account = await this.plugin._getAccount(this.from)
+      this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+        amount: '12345',
+        signature: 'foo'
+      }))
+      this.account._paychan = {
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      }
+
+      this.fulfillment = crypto.randomBytes(32)
+      this.condition = crypto.createHash('sha256')
+        .update(this.fulfillment)
+        .digest()
+
+      this.prepare = { data: { protocolData: [ {
+        protocolName: 'ilp',
+        contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
+        data: IlpPacket.serializeIlpPrepare({
+          destination: this.from,
+          amount: '123',
+          executionCondition: this.condition,
+          expiresAt: new Date(Date.now() + 10000),
+          data: Buffer.alloc(0)
+        })
+      } ] } }
+
+      this.fulfill = { data: { protocolData: [ {
+        protocolName: 'ilp',
+        contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
+        data: IlpPacket.serializeIlpFulfill({
+          fulfillment: this.fulfillment,
+          data: Buffer.alloc(0)
+        })
+      } ] } }
+
+      this.sinon.stub(this.plugin, '_sendMoneyToAccount')
+        .returns([])
+      this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, '_requestId')
+        .returns(Promise.resolve(1))
+    })
+
+    it('should return a reject if insufficient bandwidth', async function () {
+      this.prepare = { data: { protocolData: [ {
+        protocolName: 'ilp',
+        contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
+        data: IlpPacket.serializeIlpPrepare({
+          destination: this.from,
+          amount: '1234567',
+          executionCondition: this.condition,
+          expiresAt: new Date(Date.now() + 10000),
+          data: Buffer.alloc(0)
+        })
+      } ] } }
+
+      const res = await this.plugin._handleCustomData(this.from, this.prepare)
+  
+      assert.equal(res[0].protocolName, 'ilp')
+
+      const parsed = IlpPacket.deserializeIlpReject(res[0].data)
+
+      assert.deepEqual(parsed, {
+        code: 'T04',
+        triggeredBy: 'test.example.',
+        message: 'Insufficient bandwidth, used: 1222222 max: 1000000',
+        data: Buffer.alloc(0)
+      })
+    })
+  })
+
   describe('handle prepare response', () => {
     beforeEach(async function () {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'

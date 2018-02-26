@@ -384,7 +384,7 @@ class Plugin extends MiniAccountsPlugin {
 
         return this.ilpAndCustomToProtocolData({ ilp: response })
       } catch (e) {
-        return this.ilpAndCustomToProtocolData({ ilp: IlpPacket.errorToReject(e) })
+        return this.ilpAndCustomToProtocolData({ ilp: IlpPacket.errorToReject(this._prefix, e) })
       }
     }
 
