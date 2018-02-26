@@ -476,6 +476,23 @@ describe('pluginSpec', () => {
         data: Buffer.alloc(0)
       })
     })
+
+    it('should return a reject if there is no channel to peer', async function () {
+      delete this.account._paychan
+
+      const res = await this.plugin._handleCustomData(this.from, this.prepare)
+  
+      assert.equal(res[0].protocolName, 'ilp')
+
+      const parsed = IlpPacket.deserializeIlpReject(res[0].data)
+
+      assert.deepEqual(parsed, {
+        code: 'F02',
+        triggeredBy: 'test.example.',
+        message: 'Incoming traffic won\'t be accepted until a channel to the connector is established.',
+        data: Buffer.alloc(0)
+      })
+    })
   })
 
   describe('handle prepare response', () => {
@@ -573,6 +590,21 @@ describe('pluginSpec', () => {
       this.fulfill.data.fulfillment = Buffer.from('garbage')
       assert.throws(
         () => this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare),
+        IlpPacket.Errors.WrongConditionError,
+        'condition and fulfillment don\'t match.')
+
+      await new Promise(resolve => setTimeout(resolve, 10))
+      assert.isFalse(stub.called)
+    })
+
+    it('should handle a prepare response (no channel to client)', async function () {
+      const stub = this.sinon.stub(this.plugin, '_call')
+        .returns(Promise.resolve())
+
+      this.fulfill.data.fulfillment = Buffer.from('garbage')
+      assert.throws(
+        () => this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare),
+        IlpPacket.Errors.WrongConditionError,
         'condition and fulfillment don\'t match.')
 
       await new Promise(resolve => setTimeout(resolve, 10))
