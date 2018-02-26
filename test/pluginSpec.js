@@ -13,30 +13,44 @@ const debug = require('debug')('ilp-plugin-xrp-asym-server:test')
 const PluginXrpAsymServer = require('..')
 const Store = require('./util/memStore')
 
-const { RippleAPI } = require('ripple-lib')
-const fakeApi = new RippleAPI({ server: 'wss://s.altnet.rippletest.net:51233' })
-fakeApi.disconnect = () => {}
+function createPlugin () {
+  return new PluginXrpAsymServer({
+    prefix: 'test.example.',
+    port: 3033,
+    address: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+    secret: 'snRHsS3wLzbfeDNSVmtLKjE6sPMws',
+    xrpServer: 'wss://s.altnet.rippletest.net:51233',
+    claimInterval: 1000 * 30,
+    bandwidth: 1000000,
+    _store: new Store(null, 'test.example.'),
+    debugHostIldcpInfo: {
+      clientAddress: 'test.example',
+      assetScale: 6,
+      assetCode: 'XRP'
+    }
+  })
+}
 
 describe('pluginSpec', () => {
+  before(async function () {
+    const plugin = createPlugin()
+    plugin._api.disconnect = () => {}
+    plugin._api.submit = () => Promise.resolve({
+      resultCode: 'tesSUCCESS'
+    })
+    await plugin.connect()
+    this._submitterApi = plugin._api // use this API object to intercept tx prepare|sign|submit
+    await plugin.disconnect()
+  })
+
   beforeEach(async function () {
     this.timeout(10000)
     this.sinon = sinon.sandbox.create()
-    this.plugin = new PluginXrpAsymServer({
-      prefix: 'test.example.',
-      port: 3033,
-      address: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
-      secret: 'snRHsS3wLzbfeDNSVmtLKjE6sPMws',
-      xrpServer: 'wss://s.altnet.rippletest.net:51233',
-      claimInterval: 1000 * 30,
-      bandwidth: 1000000,
-      _store: new Store(null, 'test.example.'),
-      debugHostIldcpInfo: {
-        clientAddress: 'test.example',
-        assetScale: 6,
-        assetCode: 'XRP'
-      }
+    this.plugin = createPlugin()
+    this.plugin._api.disconnect = () => {}
+    this.plugin._api.submit = () => Promise.resolve({
+      resultCode: 'tesSUCCESS'
     })
-    this.plugin._api = fakeApi
 
     debug('connecting plugin')
     await this.plugin.connect()
@@ -203,9 +217,9 @@ describe('pluginSpec', () => {
     })
 
     it('should create a fund transaction with proper parameters', async function () {
-      const prepStub = this.sinon.stub(this.plugin._api, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
-      const signStub = this.sinon.stub(this.plugin._api, 'sign').returns({ signedTransaction: 'abc' })
-      const submitStub = this.sinon.stub(this.plugin._api, 'submit').returns(Promise.resolve({
+      const prepStub = this.sinon.stub(this._submitterApi, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
+      const signStub = this.sinon.stub(this._submitterApi, 'sign').returns({ signedTransaction: 'abc' })
+      const submitStub = this.sinon.stub(this._submitterApi, 'submit').returns(Promise.resolve({
         resultCode: 'tesSUCCESS'
       }))
 
@@ -221,9 +235,9 @@ describe('pluginSpec', () => {
     })
 
     it('should give an error if submit fails', async function () {
-      this.sinon.stub(this.plugin._api, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
-      this.sinon.stub(this.plugin._api, 'sign').returns({ signedTransaction: 'abc' })
-      this.sinon.stub(this.plugin._api, 'submit').returns(Promise.resolve({
+      this.sinon.stub(this._submitterApi, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
+      this.sinon.stub(this._submitterApi, 'sign').returns({ signedTransaction: 'abc' })
+      this.sinon.stub(this._submitterApi, 'submit').returns(Promise.resolve({
         resultCode: 'temMALFORMED',
         resultMessage: 'malformed'
       }))
@@ -464,7 +478,7 @@ describe('pluginSpec', () => {
       } ] } }
 
       const res = await this.plugin._handleCustomData(this.from, this.prepare)
-  
+
       assert.equal(res[0].protocolName, 'ilp')
 
       const parsed = IlpPacket.deserializeIlpReject(res[0].data)
@@ -481,7 +495,7 @@ describe('pluginSpec', () => {
       delete this.account._paychan
 
       const res = await this.plugin._handleCustomData(this.from, this.prepare)
-  
+
       assert.equal(res[0].protocolName, 'ilp')
 
       const parsed = IlpPacket.deserializeIlpReject(res[0].data)
