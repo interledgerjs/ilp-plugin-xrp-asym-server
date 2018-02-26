@@ -17,6 +17,7 @@ const DEFAULT_TIMEOUT = 30000 // TODO: should this be something else?
 const StoreWrapper = require('./src/store-wrapper')
 const Account = require('./src/account')
 const {
+  createSubmitter,
   util,
   ChannelWatcher
 } = require('ilp-plugin-xrp-paychan-shared')
@@ -41,6 +42,7 @@ class Plugin extends MiniAccountsPlugin {
     this._bandwidth = opts.maxBalance || opts.bandwidth || 0 // TODO: deprecate _bandwidth
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
+    this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
 
     this._channelToAccount = new Map()
     this._accounts = new Map()
@@ -105,18 +107,14 @@ class Plugin extends MiniAccountsPlugin {
     const publicKey = account.getPaychan().publicKey
 
     debug('creating claim tx. account=' + account.getAccount())
-    const tx = await this._api.preparePaymentChannelClaim(this._address, {
+
+    const {resultCode, resultMessage} = await this._txSubmitter('preparePaymentChannelClaim', {
       balance: util.dropsToXrp(claim.amount.toString()),
       signature: claim.signature.toUpperCase(),
       publicKey,
       channel
     })
 
-    debug('signing claim transaction. account=' + account.getAccount())
-    const signedTx = this._api.sign(tx.txJSON, this._secret)
-
-    debug('submitting claim transaction. tx=', tx, ' account=' + account.getAccount())
-    const {resultCode, resultMessage} = await this._api.submit(signedTx.signedTransaction)
     if (resultCode !== 'tesSUCCESS') {
       throw new Error('Error submitting claim: ' + resultMessage)
     }
@@ -138,7 +136,7 @@ class Plugin extends MiniAccountsPlugin {
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
     debug('creating close tx')
-    const tx = await this._api.preparePaymentChannelClaim(this._address, {
+    const {resultCode, resultMessage} = this._txSubmitter('preparePaymentChannelClaim', {
       balance: util.dropsToXrp(balance.toString()),
       signature: signature.toString('hex').toUpperCase(),
       publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
@@ -146,11 +144,6 @@ class Plugin extends MiniAccountsPlugin {
       close: true
     })
 
-    debug('signing close transaction')
-    const signedTx = this._api.sign(tx.txJSON, this._secret)
-
-    debug('submitting close transaction', tx)
-    const {resultCode, resultMessage} = await this._api.submit(signedTx.signedTransaction)
     if (resultCode !== 'tesSUCCESS') {
       console.error('WARNING: Error submitting close: ', resultMessage)
     }
@@ -205,17 +198,14 @@ class Plugin extends MiniAccountsPlugin {
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const txTag = util.randomTag()
-    const tx = await this._api.preparePaymentChannelCreate(this._address, {
+
+    const result = this._txSubmitter('preparePaymentChannelCreate', {
       amount: util.dropsToXrp(OUTGOING_CHANNEL_DEFAULT_AMOUNT),
       destination: outgoingAccount,
       settleDelay: util.MIN_SETTLE_DELAY,
       publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
       sourceTag: txTag
     })
-
-    debug('submitting transaction')
-    const signedTx = this._api.sign(tx.txJSON, this._secret)
-    const result = await this._api.submit(signedTx.signedTransaction)
 
     if (result.resultCode !== 'tesSUCCESS') {
       const message = 'Error creating the payment channel: ' + result.resultCode + ' ' + result.resultMessage
@@ -335,7 +325,7 @@ class Plugin extends MiniAccountsPlugin {
           MIN_INCOMING_CHANNEL + ' drops on hold')
       }
 
-      debug('an outgoing paychan has been authorized for', account.getAccount(), '; establishing')
+      debug('an outgoing paychan has been authorized for ', account.getAccount(), '; establishing')
       const clientChannelId = await this._fundOutgoingChannel(account, fundChannel)
       return [{
         protocolName: 'fund_channel',
