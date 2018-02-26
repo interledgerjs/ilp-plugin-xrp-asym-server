@@ -446,8 +446,7 @@ class Plugin extends MiniAccountsPlugin {
     const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
 
     if (!account.getPaychan()) {
-      throw new Errors.UnreachableError(`Incoming traffic won't be accepted until a channel
-        to the connector is established.`)
+      throw new Errors.UnreachableError(`Incoming traffic won't be accepted until a channel to the connector is established.`)
     }
 
     if (account.isBlocked()) {
