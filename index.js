@@ -50,6 +50,15 @@ class Plugin extends MiniAccountsPlugin {
 
     this._channelToAccount = new Map()
     this._accounts = new Map()
+
+    this._watcher.on('channelClose', async (channelId, paychan) => {
+      try {
+        await this._channelClose(channelId)
+      } catch (e) {
+        console.error('ERROR: failed to close channel. channel=' + channelId +
+          ' error=' + e.stack)
+      }
+    })
   }
 
   xrpToBase (amount) {
@@ -332,6 +341,7 @@ class Plugin extends MiniAccountsPlugin {
       this._store.set('channel:' + channel, account.getAccount())
       account.setChannel(channel, paychan)
 
+      await this._watcher.watch(channel)
       await this._registerAutoClaim(account)
       debug('registered payment channel. account=', account.getAccount())
     }
