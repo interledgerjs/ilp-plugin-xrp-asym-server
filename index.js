@@ -401,8 +401,12 @@ class Plugin extends MiniAccountsPlugin {
       if (new BigNumber(lastClaimedAmount).lt(amount)) {
         debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
         account.setLastClaimedAmount(amount)
-        await this._channelClaim(account).catch(e => console.error('WARNING:', e.message))
-        debug('claimed funds. account=' + account.getAccount())
+        try {
+          await this._channelClaim(account)
+          debug('claimed funds. account=' + account.getAccount())
+        } catch (err) {
+          debug('WARNING. Error on claim submission: ', err)
+        }
       }
     }, this._claimInterval))
   }
