@@ -9,12 +9,16 @@ chai.use(chaiAsPromised)
 const assert = chai.assert
 const sinon = require('sinon')
 const debug = require('debug')('ilp-plugin-xrp-asym-server:test')
+const nacl = require('tweetnacl')
 
 const PluginXrpAsymServer = require('..')
 const Store = require('./util/memStore')
+const {
+  util
+} = require('ilp-plugin-xrp-paychan-shared')
 
-function createPlugin () {
-  return new PluginXrpAsymServer({
+function createPlugin (opts = {}) {
+  return new PluginXrpAsymServer(Object.assign({
     prefix: 'test.example.',
     port: 3033,
     address: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
@@ -28,7 +32,7 @@ function createPlugin () {
       assetScale: 6,
       assetCode: 'XRP'
     }
-  })
+  }, opts))
 }
 
 describe('pluginSpec', () => {
@@ -386,6 +390,62 @@ describe('pluginSpec', () => {
 
         const parsed = JSON.parse(claim.data.toString())
         assert.equal(Number(parsed.amount), oldAmount + 100)
+      })
+
+      describe('with high scale', function () {
+        beforeEach(function () {
+          this.plugin._currencyScale = 9
+
+          this.sinon.stub(nacl.sign, 'detached').returns('abcdef')
+
+          this.plugin._keyPair = {}
+          this.plugin._funding = true
+          this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', 990)
+        })
+
+        it('should round high-scale amount up to next drop', async function () {
+          const encodeSpy = this.sinon.spy(util, 'encodeClaim')
+          this.sinon.stub(this.plugin, '_call').resolves(null)
+
+          this.plugin._sendMoneyToAccount(100, this.from)
+
+          assert.deepEqual(encodeSpy.getCall(0).args, [ '2', this.channelId ])
+        })
+
+        it('should keep error under a drop even on repeated roundings', async function () {
+          const encodeSpy = this.sinon.spy(util, 'encodeClaim')
+          this.sinon.stub(this.plugin, '_call').resolves(null)
+
+          this.plugin._sendMoneyToAccount(100, this.from)
+          this.plugin._sendMoneyToAccount(100, this.from)
+
+          assert.deepEqual(encodeSpy.getCall(0).args, [ '2', this.channelId ])
+          assert.deepEqual(encodeSpy.getCall(1).args, [ '2', this.channelId ])
+        })
+
+        it('should handle a claim', async function () {
+          // this stub isn't working, which is why handleMoney is throwing
+          this.sinon.stub(nacl.sign.detached, 'verify').returns('abcdef')
+          const encodeSpy = this.sinon.spy(util, 'encodeClaim')
+
+          this.plugin._store.setCache(this.account.getAccount() + ':balance', 990)
+          this.plugin._handleMoney(this.from, {
+            requestId: 1,
+            data: {
+              amount: '160',
+              protocolData: [{
+                protocolName: 'claim',
+                contentType: BtpPacket.MIME_APPLICATION_JSON,
+                data: Buffer.from(JSON.stringify({
+                  amount: '2150',
+                  signature: 'abcdef'
+                }))
+              }]
+            }
+          })
+
+          assert.deepEqual(encodeSpy.getCall(0).args, [ '3', this.channelId ])
+        })
       })
 
       it('should not issue a fund if the amount is below the threshold', function () {
