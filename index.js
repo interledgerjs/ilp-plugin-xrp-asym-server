@@ -46,9 +46,22 @@ class Plugin extends MiniAccountsPlugin {
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
     this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
+    this._currencyScale = opts.currencyScale || 6
 
     this._channelToAccount = new Map()
     this._accounts = new Map()
+  }
+
+  xrpToBase (amount) {
+    return new BigNumber(amount)
+      .mul(Math.pow(10, this._currencyScale))
+      .toString()
+  }
+
+  baseToXrp (amount) {
+    return new BigNumber(amount)
+      .div(Math.pow(10, this._currencyScale))
+      .toFixed(6, BigNumber.ROUND_UP)
   }
 
   sendTransfer () {}
@@ -99,7 +112,8 @@ class Plugin extends MiniAccountsPlugin {
       channel: account.getChannel(),
       clientChannel: account.getClientChannel(),
       address: this._address,
-      account: this._prefix + account.getAccount()
+      account: this._prefix + account.getAccount(),
+      currencyScale: this._currencyScale
     }
   }
 
@@ -132,15 +146,16 @@ class Plugin extends MiniAccountsPlugin {
     // close our outgoing channel to them
     debug('creating claim for closure')
     const balance = account.getBalance()
+    const dropBalance = util.xrpToDrops(this.baseToXrp(balance))
     const channel = account.getClientChannel()
-    const encodedClaim = util.encodeClaim(balance.toString(), channel)
+    const encodedClaim = util.encodeClaim(dropBalance.toString(), channel)
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
     debug('creating close tx')
     const {resultCode, resultMessage} = await this._txSubmitter('preparePaymentChannelClaim', {
-      balance: util.dropsToXrp(balance.toString()),
+      balance: this.baseToXrp(balance),
       signature: signature.toString('hex').toUpperCase(),
       publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
       channel,
@@ -535,18 +550,19 @@ class Plugin extends MiniAccountsPlugin {
 
     // sign a claim
     const clientChannel = account.getClientChannel()
-    const encodedClaim = util.encodeClaim(newBalance.toString(), clientChannel)
+    const newDropBalance = util.xrpToDrops(this.baseToXrp(newBalance))
+    const encodedClaim = util.encodeClaim(newDropBalance.toString(), clientChannel)
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
-    debug(`signing outgoing claim for ${newBalance.toString()} drops on ` +
+    debug(`signing outgoing claim for ${newDropBalance.toString()} drops on ` +
       `channel ${clientChannel}`)
 
     const aboveThreshold = new BigNumber(util
       .xrpToDrops(account.getClientPaychan().amount))
       .minus(OUTGOING_CHANNEL_DEFAULT_AMOUNT / 2)
-      .lt(newBalance.toString())
+      .lt(newDropBalance.toString())
 
     // if the claim we're signing is for more than the channel's max balance
     // minus half the minimum balance, add some funds
@@ -595,8 +611,9 @@ class Plugin extends MiniAccountsPlugin {
 
     // TODO: if the channel somehow is null, make sure this behaves OK
     const { amount, signature } = claim
-    const encodedClaim = util.encodeClaim(amount, account.getChannel())
-    debug('handling claim. account=' + account, 'amount=' + amount)
+    const dropAmount = util.xrpToDrops(this.baseToXrp(amount))
+    const encodedClaim = util.encodeClaim(dropAmount, account.getChannel())
+    debug('handling claim. account=' + account, 'amount=' + dropAmount)
 
     try {
       valid = nacl.sign.detached.verify(
@@ -610,7 +627,7 @@ class Plugin extends MiniAccountsPlugin {
 
     // TODO: better reconciliation if claims are invalid
     if (!valid) {
-      debug(`got invalid claim signature ${signature} for amount ${amount} drops`)
+      debug(`got invalid claim signature ${signature} for amount ${dropAmount} drops`)
       /* throw new Error('got invalid claim signature ' +
         signature + ' for amount ' + amount + ' drops') */
       throw new Error('Invalid claim: invalid signature')
@@ -619,11 +636,11 @@ class Plugin extends MiniAccountsPlugin {
     // validate claim against balance
     const channelBalance = util.xrpToDrops(account.getPaychan().amount)
     debug('got channel balance. balance=' + channelBalance)
-    if (new BigNumber(amount).gt(channelBalance)) {
-      const message = 'got claim for amount higher than channel balance. amount: ' + amount + ', incoming channel balance: ' + channelBalance
+    if (new BigNumber(dropAmount).gt(channelBalance)) {
+      const message = 'got claim for amount higher than channel balance. amount: ' + dropAmount + ', incoming channel balance: ' + channelBalance
       debug(message)
       // throw new Error(message)
-      throw new Error('Invalid claim: claim amount (' + amount + ') exceeds channel balance (' + channelBalance + ')')
+      throw new Error('Invalid claim: claim amount (' + dropAmount + ') exceeds channel balance (' + channelBalance + ')')
     }
 
     const lastValue = new BigNumber(account.getIncomingClaim().amount)
