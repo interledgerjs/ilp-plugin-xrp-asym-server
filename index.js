@@ -3,15 +3,18 @@
 const crypto = require('crypto')
 const IlpPacket = require('ilp-packet')
 const { Errors } = IlpPacket
-const { Writer } = require('oer-utils')
 const nacl = require('tweetnacl')
 const { RippleAPI } = require('ripple-lib')
 const BtpPacket = require('btp-packet')
 const BigNumber = require('bignumber.js')
 const debug = require('debug')('ilp-plugin-xrp-server')
 const MiniAccountsPlugin = require('ilp-plugin-mini-accounts')
+const Ildcp = require('ilp-protocol-ildcp')
 const OUTGOING_CHANNEL_DEFAULT_AMOUNT = Math.pow(10, 6) // 1 XRP
 const MIN_INCOMING_CHANNEL = 10000000
+const ASSET_SCALE = 6
+const ASSET_CODE = 'XRP'
+
 const CHANNEL_KEYS = 'ilp-plugin-multi-xrp-paychan-channel-keys'
 const DEFAULT_TIMEOUT = 30000 // TODO: should this be something else?
 const StoreWrapper = require('./src/store-wrapper')
@@ -343,16 +346,16 @@ class Plugin extends MiniAccountsPlugin {
 
         // TODO: don't do this, use connector only instead
         if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE && IlpPacket.deserializeIlpPrepare(ilp.data).destination === 'peer.config') {
-          const writer = new Writer()
-          const response = this._prefix + account.getAccount()
-          writer.writeVarOctetString(Buffer.from(response))
-
           return [{
             protocolName: 'ilp',
             contentType: BtpPacket.MIME_APPLICATION_OCTET_STRING,
             data: IlpPacket.serializeIlpFulfill({
               fulfillment: Buffer.alloc(32),
-              data: writer.getBuffer()
+              data: Ildcp.serializeIldcpResponse({
+                clientAddress: this._prefix + account.getAccount(),
+                assetCode: ASSET_CODE,
+                assetScale: ASSET_SCALE
+              })
             })
           }]
         }
