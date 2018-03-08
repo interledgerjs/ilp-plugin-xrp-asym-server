@@ -139,7 +139,7 @@ class Plugin extends MiniAccountsPlugin {
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
     debug('creating close tx')
-    const {resultCode, resultMessage} = this._txSubmitter('preparePaymentChannelClaim', {
+    const {resultCode, resultMessage} = await this._txSubmitter('preparePaymentChannelClaim', {
       balance: util.dropsToXrp(balance.toString()),
       signature: signature.toString('hex').toUpperCase(),
       publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
@@ -202,7 +202,7 @@ class Plugin extends MiniAccountsPlugin {
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const txTag = util.randomTag()
 
-    const result = this._txSubmitter('preparePaymentChannelCreate', {
+    const result = await this._txSubmitter('preparePaymentChannelCreate', {
       amount: util.dropsToXrp(OUTGOING_CHANNEL_DEFAULT_AMOUNT),
       destination: outgoingAccount,
       settleDelay: util.MIN_SETTLE_DELAY,
