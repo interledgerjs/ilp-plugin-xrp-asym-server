@@ -46,7 +46,7 @@ class Plugin extends MiniAccountsPlugin {
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
     this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
-    this._currencyScale = opts.currencyScale || 6
+    this._currencyScale = (typeof opts.currencyScale === 'number') ? opts.currencyScale : 6
 
     this._channelToAccount = new Map()
     this._accounts = new Map()

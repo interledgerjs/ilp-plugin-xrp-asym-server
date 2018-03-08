@@ -412,6 +412,16 @@ describe('pluginSpec', () => {
           assert.deepEqual(encodeSpy.getCall(0).args, [ '2', this.channelId ])
         })
 
+        it('should scale up low-scale amount', async function () {
+          this.plugin._currencyScale = 2
+          const encodeSpy = this.sinon.spy(util, 'encodeClaim')
+          this.sinon.stub(this.plugin, '_call').resolves(null)
+
+          this.plugin._sendMoneyToAccount(100, this.from)
+
+          assert.deepEqual(encodeSpy.getCall(0).args, [ '10900000', this.channelId ])
+        })
+
         it('should keep error under a drop even on repeated roundings', async function () {
           const encodeSpy = this.sinon.spy(util, 'encodeClaim')
           this.sinon.stub(this.plugin, '_call').resolves(null)
