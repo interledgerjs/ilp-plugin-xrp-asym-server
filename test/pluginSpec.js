@@ -477,6 +477,22 @@ describe('pluginSpec', () => {
           amount: 1000000
         }))
       })
+
+      it('reloads client\'s paychan details after funding', async function () {
+        this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, 'fundChannel').resolves()
+        const expectedClientChan = Object.assign({}, this.account._clientPaychan, {amount: '2'})
+        sinon.stub(this.plugin._api, 'getPaymentChannel').resolves(expectedClientChan)
+
+        // this will trigger a fund tx
+        this.plugin._sendMoneyToAccount(500000, this.from)
+
+        // wait for the fund tx to be completed
+        await new Promise((resolve, reject) => {
+          this.account.setFunding = () => resolve()
+        })
+        assert.deepEqual(this.account.getClientPaychan(), expectedClientChan,
+          'expected client paychan to be updated after funding completed')
+      })
     })
   })
 

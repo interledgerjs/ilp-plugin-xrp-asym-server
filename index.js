@@ -578,6 +578,7 @@ class Plugin extends MiniAccountsPlugin {
         amount: OUTGOING_CHANNEL_DEFAULT_AMOUNT
       })
         .then(async () => {
+          await account.setClientChannel(clientChannel) // reloads the channel amount
           account.setFunding(false)
           debug('completed fund tx. account=', account.getAccount())
           await this._call(to, {
