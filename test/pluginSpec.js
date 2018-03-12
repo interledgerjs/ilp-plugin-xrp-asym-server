@@ -47,6 +47,13 @@ describe('pluginSpec', () => {
     await plugin.disconnect()
   })
 
+  describe('constructor', function () {
+    it('should throw if currencyScale is neither undefined nor a number', function () {
+      assert.throws(() => createPlugin({ currencyScale: 'oaimwdaiowdoamwdaoiw' }),
+        /opts.currencyScale must be a number if specified/)
+    })
+  })
+
   beforeEach(async function () {
     this.timeout(10000)
     this.sinon = sinon.sandbox.create()
