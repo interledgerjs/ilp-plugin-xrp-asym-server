@@ -37,6 +37,12 @@ class Plugin extends MiniAccountsPlugin {
   constructor (opts) {
     super(opts)
 
+    if (typeof opts.currencyScale !== 'number' && opts.currencyScale !== undefined) {
+      throw new Error('opts.currencyScale must be a number if specified.' +
+        ' type=' + (typeof opts.currencyScale) +
+        ' value=' + opts.currencyScale)
+    }
+
     this._xrpServer = opts.xrpServer
     this._secret = opts.secret
     this._address = opts.address
