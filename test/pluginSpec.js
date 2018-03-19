@@ -36,17 +36,6 @@ function createPlugin (opts = {}) {
 }
 
 describe('pluginSpec', () => {
-  before(async function () {
-    const plugin = createPlugin()
-    plugin._api.disconnect = () => {}
-    plugin._api.submit = () => Promise.resolve({
-      resultCode: 'tesSUCCESS'
-    })
-    await plugin.connect()
-    this._submitterApi = plugin._api // use this API object to intercept tx prepare|sign|submit
-    await plugin.disconnect()
-  })
-
   describe('constructor', function () {
     it('should throw if currencyScale is neither undefined nor a number', function () {
       assert.throws(() => createPlugin({ currencyScale: 'oaimwdaiowdoamwdaoiw' }),
@@ -58,7 +47,6 @@ describe('pluginSpec', () => {
     this.timeout(10000)
     this.sinon = sinon.sandbox.create()
     this.plugin = createPlugin()
-    this.plugin._api.disconnect = () => {}
     this.plugin._api.submit = () => Promise.resolve({
       resultCode: 'tesSUCCESS'
     })
@@ -149,9 +137,7 @@ describe('pluginSpec', () => {
 
     it('should submit the correct claim tx on channel close', async function () {
       this.account.setBalance('1000')
-      const submitStub = this.sinon.stub(this.plugin, '_txSubmitter').resolves({
-        resultCode: 'tesSUCCESS'
-      })
+      const submitStub = this.sinon.stub(this.plugin._txSubmitter, 'submit').resolves()
 
       await this.plugin._channelClose(this.channelId)
 
@@ -271,34 +257,28 @@ describe('pluginSpec', () => {
     })
 
     it('should create a fund transaction with proper parameters', async function () {
-      const prepStub = this.sinon.stub(this._submitterApi, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
-      const signStub = this.sinon.stub(this._submitterApi, 'sign').returns({ signedTransaction: 'abc' })
-      const submitStub = this.sinon.stub(this._submitterApi, 'submit').returns(Promise.resolve({
-        resultCode: 'tesSUCCESS'
-      }))
-
+      const stub = this.sinon.stub(this.plugin._txSubmitter, 'submit').resolves()
       await this.plugin._channelClaim(this.account)
-      assert.isTrue(prepStub.calledWith(this.plugin._address, {
+      assert(stub.calledWithExactly('preparePaymentChannelClaim', {
         balance: '0.012345',
         signature: 'FOO',
         publicKey: 'bar',
-        channel: this.channelId
-      }))
-      assert.isTrue(signStub.calledWith('xyz'))
-      assert.isTrue(submitStub.calledWith('abc'))
+        channel: '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      }), 'unexpected args: ' + JSON.stringify(stub.args))
     })
 
     it('should give an error if submit fails', async function () {
-      this.sinon.stub(this._submitterApi, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
-      this.sinon.stub(this._submitterApi, 'sign').returns({ signedTransaction: 'abc' })
-      this.sinon.stub(this._submitterApi, 'submit').returns(Promise.resolve({
+      const api = this.plugin._txSubmitter._api
+      this.sinon.stub(api, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })
+      this.sinon.stub(api, 'sign').returns({ signedTransaction: 'abc' })
+      this.sinon.stub(api, 'submit').returns(Promise.resolve({
         resultCode: 'temMALFORMED',
         resultMessage: 'malformed'
       }))
 
       await assert.isRejected(
         this.plugin._channelClaim(this.account),
-        'Error submitting claim: malformed')
+        'Error submitting claim')
     })
   })
 
