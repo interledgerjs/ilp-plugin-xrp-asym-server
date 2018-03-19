@@ -140,15 +140,15 @@ class Plugin extends MiniAccountsPlugin {
 
     debug('creating claim tx. account=' + account.getAccount())
 
-    const {resultCode, resultMessage} = await this._txSubmitter('preparePaymentChannelClaim', {
-      balance: util.dropsToXrp(claim.amount.toString()),
-      signature: claim.signature.toUpperCase(),
-      publicKey,
-      channel
-    })
-
-    if (resultCode !== 'tesSUCCESS') {
-      throw new Error('Error submitting claim: ' + resultMessage)
+    try {
+      await this._txSubmitter.submit('preparePaymentChannelClaim', {
+        balance: util.dropsToXrp(claim.amount.toString()),
+        signature: claim.signature.toUpperCase(),
+        publicKey,
+        channel
+      })
+    } catch (err) {
+      throw new Error('Error submitting claim')
     }
   }
 
@@ -169,17 +169,13 @@ class Plugin extends MiniAccountsPlugin {
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
     debug('creating close tx')
-    const {resultCode, resultMessage} = await this._txSubmitter('preparePaymentChannelClaim', {
+    await this._txSubmitter.submit('preparePaymentChannelClaim', {
       balance: this.baseToXrp(balance),
       signature: signature.toString('hex').toUpperCase(),
       publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
       channel,
       close: true
     })
-
-    if (resultCode !== 'tesSUCCESS') {
-      console.error('WARNING: Error submitting close: ', resultMessage)
-    }
   }
 
   async _preConnect () {
@@ -232,7 +228,7 @@ class Plugin extends MiniAccountsPlugin {
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const txTag = util.randomTag()
 
-    const result = await this._txSubmitter('preparePaymentChannelCreate', {
+    const ev = await this._txSubmitter.submit('preparePaymentChannelCreate', {
       amount: util.dropsToXrp(OUTGOING_CHANNEL_DEFAULT_AMOUNT),
       destination: outgoingAccount,
       settleDelay: util.MIN_SETTLE_DELAY,
@@ -240,35 +236,15 @@ class Plugin extends MiniAccountsPlugin {
       sourceTag: txTag
     })
 
-    if (result.resultCode !== 'tesSUCCESS') {
-      const message = 'Error creating the payment channel: ' + result.resultCode + ' ' + result.resultMessage
-      debug(message)
-      return
-    }
+    const clientChannelId = util.computeChannelId(
+      ev.transaction.Account,
+      ev.transaction.Destination,
+      ev.transaction.Sequence)
 
-    return new Promise((resolve) => {
-      const handleTransaction = async (ev) => {
-        if (ev.transaction.SourceTag !== txTag) return
-        if (ev.transaction.Account !== this._address) return
-
-        const clientChannelId = util.computeChannelId(
-          ev.transaction.Account,
-          ev.transaction.Destination,
-          ev.transaction.Sequence)
-
-        debug('created outgoing channel. channel=', clientChannelId)
-        const clientPaychan = await this._api.getPaymentChannel(clientChannelId)
-
-        account.setOutgoingBalance('0')
-        account.setClientChannel(clientChannelId, clientPaychan)
-
-        setImmediate(() => this._api.connection
-          .removeListener('transaction', handleTransaction))
-        resolve(clientChannelId)
-      }
-
-      this._api.connection.on('transaction', handleTransaction)
-    })
+    debug('created outgoing channel. channel=', clientChannelId)
+    const clientPaychan = await this._api.getPaymentChannel(clientChannelId)
+    account.setOutgoingBalance('0')
+    account.setClientChannel(clientChannelId, clientPaychan)
   }
 
   async _handleCustomData (from, message) {
