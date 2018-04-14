@@ -245,6 +245,8 @@ class Plugin extends MiniAccountsPlugin {
     const clientPaychan = await this._api.getPaymentChannel(clientChannelId)
     account.setOutgoingBalance('0')
     account.setClientChannel(clientChannelId, clientPaychan)
+
+    return clientChannelId
   }
 
   async _handleCustomData (from, message) {

@@ -16,7 +16,7 @@
     "debug": "^3.1.0",
     "ilp-packet": "^2.2.0",
     "ilp-plugin-mini-accounts": "^3.4.2",
-    "ilp-plugin-xrp-paychan-shared": "^3.0.0",
+    "ilp-plugin-xrp-paychan-shared": "^3.0.2",
     "ilp-protocol-ildcp": "^1.0.0",
     "ripple-address-codec": "^2.0.1",
     "ripple-lib": "^0.17.9",
