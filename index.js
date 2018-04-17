@@ -37,12 +37,20 @@ class Plugin extends MiniAccountsPlugin {
   constructor (opts) {
     super(opts)
 
-    if (typeof opts.currencyScale !== 'number' && opts.currencyScale !== undefined) {
-      throw new Error('opts.currencyScale must be a number if specified.' +
-        ' type=' + (typeof opts.currencyScale) +
-        ' value=' + opts.currencyScale)
+    if (opts.assetScale && opts.currencyScale) {
+      throw new Error('opts.assetScale is an alias for opts.currencyScale;' +
+        'only one must be specified')
     }
 
+    const currencyScale = opts.assetScale || opts.currencyScale
+
+    if (typeof currencyScale !== 'number' && currencyScale !== undefined) {
+      throw new Error('currency scale must be a number if specified.' +
+        ' type=' + (typeof currencyScale) +
+        ' value=' + currencyScale)
+    }
+
+    this._currencyScale = (typeof currencyScale === 'number') ? currencyScale : 6
     this._xrpServer = opts.xrpServer
     this._secret = opts.secret
     this._address = opts.address
@@ -52,7 +60,6 @@ class Plugin extends MiniAccountsPlugin {
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
     this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
-    this._currencyScale = (typeof opts.currencyScale === 'number') ? opts.currencyScale : 6
 
     this._channelToAccount = new Map()
     this._accounts = new Map()
