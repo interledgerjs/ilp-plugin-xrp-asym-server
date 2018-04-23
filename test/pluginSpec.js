@@ -210,6 +210,21 @@ describe('pluginSpec', () => {
       assert.isTrue(spy.calledWith(this.channelId))
       assert.equal(this.plugin._channelToAccount.get(this.channelId).getAccount(), this.account)
     })
+
+    it('should delete persisted paychan if it does not exist on the ledger', async function () {
+      this.plugin._store.setCache(this.account + ':channel', this.channelId)
+      const stub = this.sinon.stub(this.plugin._api, 'getPaymentChannel').callsFake(async () => {
+        const error = new Error()
+        error.name = 'RippledError'
+        error.message = 'entryNotFound'
+        throw error
+      })
+
+      await this.plugin._connect(this.from, {})
+      assert.isTrue(stub.calledWith(this.channelId))
+      assert.isNotOk(this.plugin._channelToAccount.get(this.channelId))
+      assert.isNotOk(this.plugin._store.get(this.account + ':channel'))
+    })
   })
 
   describe('get extra info', () => {

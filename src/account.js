@@ -1,5 +1,6 @@
 'use strict'
 
+const debug = require('debug')('ilp-plugin-xrp-asym-server:account')
 const BigNumber = require('bignumber.js')
 
 const BALANCE = a => a
@@ -70,11 +71,16 @@ class Account {
     ])
 
     if (this.getChannel()) {
-      // hold empty paychan details if the channel no longer exists.
-      // the channel will be cleaned up after failing validation.
-      this._paychan = await this._api.getPaymentChannel(this.getChannel())
-        .catch(() => ({}))
-      this._lastClaimedAmount = this._paychan.balance
+      try {
+        this._paychan = await this._api.getPaymentChannel(this.getChannel())
+        this._lastClaimedAmount = this._paychan.balance
+      } catch (e) {
+        debug('failed to load channel entry. error=' + e.message)
+        if (e.name === 'RippledError' && e.message === 'entryNotFound') {
+          debug('removing channel because it has been deleted')
+          this.deleteChannel()
+        }
+      }
     }
 
     if (this.getClientChannel()) {
