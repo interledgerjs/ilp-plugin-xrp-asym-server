@@ -147,6 +147,8 @@ class Account {
   deleteChannel () {
     delete this._paychan
     delete this._lastClaimedAmount
+
+    this._store.delete(INCOMING_CLAIM(this._account))
     return this._store.delete(CHANNEL(this._account))
   }
 
