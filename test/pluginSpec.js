@@ -54,6 +54,8 @@ describe('pluginSpec', () => {
     debug('connecting plugin')
     await this.plugin.connect()
     debug('connected')
+
+    this.feeStub = this.sinon.stub(this.plugin._api, 'getFee').resolves('0.000016')
   })
 
   afterEach(async function () {
@@ -637,6 +639,47 @@ describe('pluginSpec', () => {
         message: 'Incoming traffic won\'t be accepted until a channel to the connector is established.',
         data: Buffer.alloc(0)
       })
+    })
+  })
+
+  describe('auto claim logic', () => {
+    beforeEach(async function () {
+      this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
+      this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      this.account = await this.plugin._getAccount(this.from)
+      this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+        amount: '12345',
+        signature: 'foo'
+      }))
+      this.account._lastClaimedAmount = '0.012300'
+      this.account._paychan = {
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      }
+    })
+
+    it('should auto claim when amount is more than fee + last claim', async function () {
+      this.feeStub.resolves('0.000016')
+      const stub = this.sinon.stub(this.plugin, '_channelClaim').resolves()
+
+      await this.plugin._autoClaim(this.account)
+      assert.isTrue(stub.called)
+    })
+
+    it('should not auto claim when amount is less than fee + last claim', async function () {
+      this.feeStub.resolves('0.000045')
+      const stub = this.sinon.stub(this.plugin, '_channelClaim').resolves()
+
+      await this.plugin._autoClaim(this.account)
+      assert.isFalse(stub.called)
     })
   })
 

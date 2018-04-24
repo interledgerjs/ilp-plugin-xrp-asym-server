@@ -400,29 +400,34 @@ class Plugin extends MiniAccountsPlugin {
     return []
   }
 
+  async _autoClaim (account) {
+    const lastClaimedAmount = account.getLastClaimedAmount()
+    const amount = this.baseToXrp(account.getIncomingClaim().amount)
+    const fee = await this._api.getFee()
+
+    debug('auto-claiming. account=' + account.getAccount(), 'amount=' + amount,
+      'lastClaimedAmount=' + lastClaimedAmount, 'fee=' + fee)
+    if (new BigNumber(lastClaimedAmount).plus(fee).lt(amount)) {
+      debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
+      account.setLastClaimedAmount(amount)
+      try {
+        await this._channelClaim(account)
+        debug('claimed funds. account=' + account.getAccount())
+      } catch (err) {
+        debug('WARNING. Error on claim submission: ', err)
+      }
+    }
+  }
+
   async _registerAutoClaim (account) {
     if (account.getClaimIntervalId()) return
 
     debug('registering auto-claim. interval=' + this._claimInterval,
       'account=' + account.getAccount())
 
-    account.setClaimIntervalId(setInterval(async () => {
-      const lastClaimedAmount = account.getLastClaimedAmount()
-      const amount = account.getIncomingClaim().amount
-
-      debug('auto-claiming. account=' + account.getAccount(), 'amount=' + amount,
-        'lastClaimedAmount=' + lastClaimedAmount)
-      if (new BigNumber(lastClaimedAmount).lt(amount)) {
-        debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
-        account.setLastClaimedAmount(amount)
-        try {
-          await this._channelClaim(account)
-          debug('claimed funds. account=' + account.getAccount())
-        } catch (err) {
-          debug('WARNING. Error on claim submission: ', err)
-        }
-      }
-    }, this._claimInterval))
+    account.setClaimIntervalId(setInterval(
+      this._autoClaim.bind(this, account),
+      this._claimInterval))
   }
 
   async _expireData (account, ilpData) {
