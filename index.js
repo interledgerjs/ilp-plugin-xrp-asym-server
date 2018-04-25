@@ -76,7 +76,7 @@ class Plugin extends MiniAccountsPlugin {
 
   xrpToBase (amount) {
     return new BigNumber(amount)
-      .mul(Math.pow(10, this._currencyScale))
+      .times(Math.pow(10, this._currencyScale))
       .toString()
   }
 
