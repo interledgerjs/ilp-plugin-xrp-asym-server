@@ -121,7 +121,8 @@ class Plugin extends MiniAccountsPlugin {
       account = new Account({
         account: accountName,
         store: this._store,
-        api: this._api
+        api: this._api,
+        scale: this._currencyScale
       })
       this._accounts.set(accountName, account)
     }
@@ -402,8 +403,8 @@ class Plugin extends MiniAccountsPlugin {
 
   async _autoClaim (account) {
     const lastClaimedAmount = account.getLastClaimedAmount()
-    const amount = this.baseToXrp(account.getIncomingClaim().amount)
-    const fee = await this._api.getFee()
+    const amount = account.getIncomingClaim().amount
+    const fee = this.xrpToBase(await this._api.getFee())
 
     debug('auto-claiming. account=' + account.getAccount(), 'amount=' + amount,
       'lastClaimedAmount=' + lastClaimedAmount, 'fee=' + fee)
