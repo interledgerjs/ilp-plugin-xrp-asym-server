@@ -153,6 +153,13 @@ class Account {
   }
 
   deleteChannel () {
+    if (new BigNumber(this.getLastClaimedAmount()).lt(this.getIncomingClaim().amount)) {
+      console.error('Critical Error! Full balance was not able to be claimed before channel deletion.' +
+        ' claim=' + this._store.get(INCOMING_CLAIM(this._account)) +
+        ' lastClaimedAmount=' + this.getLastClaimedAmount() +
+        ' channelId=' + this._store.get(CHANNEL(this._account)))
+    }
+
     const newBalance = new BigNumber(this.getBalance())
       .minus(this.getLastClaimedAmount())
       .toString()
