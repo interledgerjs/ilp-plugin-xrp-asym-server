@@ -9,19 +9,26 @@ const CHANNEL = a => a + ':channel'
 const IS_BLOCKED = a => a + ':block'
 const CLIENT_CHANNEL = a => a + ':client_channel'
 const OUTGOING_BALANCE = a => a + ':outgoing_balance'
+const LAST_CLAIMED = a => a + ':last_claimed'
 // TODO: the channels to accounts map
 
 class Account {
-  constructor ({ account, store, api }) {
+  constructor ({ account, store, api, currencyScale }) {
     this._store = store
     this._account = account
     this._api = api
+    this._currencyScale = currencyScale
 
     this._paychan = null
     this._clientPaychan = null
     this._funding = null
-    this._lastClaimedAmount = null
     this._claimIntervalId = null
+  }
+
+  xrpToBase (amount) {
+    return new BigNumber(amount)
+      .times(Math.pow(10, this._currencyScale))
+      .toString()
   }
 
   getAccount () {
@@ -45,11 +52,11 @@ class Account {
   }
 
   getLastClaimedAmount () {
-    return this._lastClaimedAmount
+    return this._store.get(LAST_CLAIMED(this._account)) || '0'
   }
 
   setLastClaimedAmount (amount) {
-    this._lastClaimedAmount = amount
+    this._store.set(LAST_CLAIMED(this._account))
   }
 
   isFunding () {
@@ -67,13 +74,14 @@ class Account {
       this._store.load(CHANNEL(this._account)),
       this._store.load(IS_BLOCKED(this._account)),
       this._store.load(CLIENT_CHANNEL(this._account)),
-      this._store.load(OUTGOING_BALANCE(this._account))
+      this._store.load(OUTGOING_BALANCE(this._account)),
+      this._store.load(LAST_CLAIMED(this._account))
     ])
 
     if (this.getChannel()) {
       try {
         this._paychan = await this._api.getPaymentChannel(this.getChannel())
-        this._lastClaimedAmount = this._paychan.balance
+        this.setLastClaimedAmount(this.xrpToBase(this._paychan.balance))
       } catch (e) {
         debug('failed to load channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
@@ -103,7 +111,7 @@ class Account {
   }
 
   getIncomingClaim () {
-    const paychanAmount = new BigNumber(this._paychan ? this._paychan.balance : '0')
+    const paychanAmount = new BigNumber(this.getLastClaimedAmount())
     const storedClaim = JSON.parse(this._store.get(INCOMING_CLAIM(this._account)) ||
       '{"amount":"0"}')
 
@@ -140,14 +148,20 @@ class Account {
 
   setChannel (channel, paychan) {
     this._paychan = paychan
-    this._lastClaimedAmount = this._paychan.balance
+    this.setLastClaimedAmount(this.xrpToBase(this._paychan.balance))
     return this._store.set(CHANNEL(this._account), channel)
   }
 
   deleteChannel () {
-    delete this._paychan
-    delete this._lastClaimedAmount
+    const newBalance = new BigNumber(this.getBalance())
+      .minus(this.getLastClaimedAmount())
+      .toString()
 
+    this.setBalance(newBalance)
+
+    delete this._paychan
+
+    this._store.delete(LAST_CLAIMED(this._account))
     this._store.delete(INCOMING_CLAIM(this._account))
     return this._store.delete(CHANNEL(this._account))
   }
