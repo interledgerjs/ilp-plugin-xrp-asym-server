@@ -10,6 +10,7 @@ const assert = chai.assert
 const sinon = require('sinon')
 const debug = require('debug')('ilp-plugin-xrp-asym-server:test')
 const nacl = require('tweetnacl')
+const EventEmitter = require('events')
 
 const PluginXrpAsymServer = require('..')
 const Store = require('./util/memStore')
@@ -47,6 +48,21 @@ describe('pluginSpec', () => {
     this.timeout(10000)
     this.sinon = sinon.sandbox.create()
     this.plugin = createPlugin()
+    this.plugin._api.connect = () => Promise.resolve()
+    this.plugin._api.connection = new EventEmitter()
+    this.plugin._api.connection.request = () => Promise.resolve()
+    this.plugin._api.disconnect = () => Promise.resolve()
+    this.plugin._api.getPaymentChannel = () => Promise.resolve({
+      account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+      amount: '1',
+      balance: '0',
+      destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+      publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+      settleDelay: 3600,
+      sourceTag: 1280434065,
+      previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+      previousAffectingTransactionLedgerVersion: 6089142
+    })
     this.plugin._api.submit = () => Promise.resolve({
       resultCode: 'tesSUCCESS'
     })
@@ -55,7 +71,8 @@ describe('pluginSpec', () => {
     await this.plugin.connect()
     debug('connected')
 
-    this.feeStub = this.sinon.stub(this.plugin._api, 'getFee').resolves('0.000016')
+    this.feeStub = this.sinon.stub(this.plugin._api, 'getFee')
+      .resolves('0.000016')
   })
 
   afterEach(async function () {
@@ -226,6 +243,7 @@ describe('pluginSpec', () => {
       assert.isTrue(stub.calledWith(this.channelId))
       assert.isNotOk(this.plugin._channelToAccount.get(this.channelId))
       assert.isNotOk(this.plugin._store.get(this.account + ':channel'))
+      assert.isNotOk(this.plugin._store.get(this.account + ':last_claimed'))
     })
   })
 
@@ -648,15 +666,15 @@ describe('pluginSpec', () => {
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
+      this.plugin._store.setCache(this.account.getAccount() + ':last_claimed', '12300')
       this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
         amount: '12345',
         signature: 'foo'
       }))
-      this.account._lastClaimedAmount = '0.012300'
       this.account._paychan = {
         account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
         amount: '1',
-        balance: '0',
+        balance: '0.012300',
         destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
         publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
         settleDelay: 3600,
