@@ -668,7 +668,7 @@ describe('pluginSpec', () => {
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':last_claimed', '12300')
       this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
-        amount: '12345',
+        amount: '13901',
         signature: 'foo'
       }))
       this.account._paychan = {
@@ -684,7 +684,7 @@ describe('pluginSpec', () => {
       }
     })
 
-    it('should auto claim when amount is more than fee + last claim', async function () {
+    it('should auto claim when amount is more than 100 * fee + last claim', async function () {
       this.feeStub.resolves('0.000016')
       const stub = this.sinon.stub(this.plugin, '_channelClaim').resolves()
 
@@ -692,12 +692,39 @@ describe('pluginSpec', () => {
       assert.isTrue(stub.called)
     })
 
-    it('should not auto claim when amount is less than fee + last claim', async function () {
-      this.feeStub.resolves('0.000045')
+    it('should not auto claim when amount is less than 100 * fee + last claim', async function () {
+      this.feeStub.resolves('0.000017')
       const stub = this.sinon.stub(this.plugin, '_channelClaim').resolves()
 
       await this.plugin._autoClaim(this.account)
       assert.isFalse(stub.called)
+    })
+
+    describe('with high scale', () => {
+      beforeEach(function () {
+        this.plugin._currencyScale = 9
+        this.plugin._store.setCache(this.account.getAccount() + ':last_claimed', '12300000')
+        this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+          amount: '13901000',
+          signature: 'foo'
+        }))
+      })
+
+      it('should auto claim when amount is more than 100 * fee + last claim', async function () {
+        this.feeStub.resolves('0.000016')
+        const stub = this.sinon.stub(this.plugin, '_channelClaim').resolves()
+
+        await this.plugin._autoClaim(this.account)
+        assert.isTrue(stub.called)
+      })
+
+      it('should not auto claim when amount is less than 100 * fee + last claim', async function () {
+        this.feeStub.resolves('0.000017')
+        const stub = this.sinon.stub(this.plugin, '_channelClaim').resolves()
+
+        await this.plugin._autoClaim(this.account)
+        assert.isFalse(stub.called)
+      })
     })
   })
 

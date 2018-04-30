@@ -60,6 +60,7 @@ class Plugin extends MiniAccountsPlugin {
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._store = new StoreWrapper(opts._store)
     this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
+    this._maxFeePercent = opts.maxFeePercent || '0.01'
 
     this._channelToAccount = new Map()
     this._accounts = new Map()
@@ -401,14 +402,21 @@ class Plugin extends MiniAccountsPlugin {
     return []
   }
 
-  async _autoClaim (account) {
+  async _isClaimProfitable (account) {
     const lastClaimedAmount = account.getLastClaimedAmount()
     const amount = account.getIncomingClaim().amount
-    const fee = this.xrpToBase(await this._api.getFee())
+    const fee = new BigNumber(this.xrpToBase(await this._api.getFee()))
+    const income = new BigNumber(amount).minus(lastClaimedAmount)
 
-    debug('auto-claiming. account=' + account.getAccount(), 'amount=' + amount,
+    debug('calculating auto-claim. account=' + account.getAccount(), 'amount=' + amount,
       'lastClaimedAmount=' + lastClaimedAmount, 'fee=' + fee)
-    if (new BigNumber(lastClaimedAmount).plus(fee).lt(amount)) {
+
+    return income.isGreaterThan(0) && fee.dividedBy(income).lte(this._maxFeePercent)
+  }
+
+  async _autoClaim (account) {
+    if (await this._isClaimProfitable(account)) {
+      const amount = account.getIncomingClaim().amount
       debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
       account.setLastClaimedAmount(amount)
       try {
