@@ -800,6 +800,17 @@ describe('pluginSpec', () => {
       }))
     })
 
+    it('should ignore fulfillments for zero-amount packets', async function () {
+      const stub = this.sinon.stub(this.plugin, '_call')
+        .returns(Promise.resolve())
+
+      this.prepare.data.amount = '0'
+
+      this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      assert.isFalse(stub.called)
+    })
+
     it('should handle a prepare response on which transfer fails', async function () {
       this.sinon.stub(this.plugin, '_call')
         .returns(Promise.reject(new Error('no')))

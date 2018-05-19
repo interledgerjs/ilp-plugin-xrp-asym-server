@@ -527,6 +527,11 @@ class Plugin extends MiniAccountsPlugin {
             fulfillment=${parsedResponse.data.fulfillment.toString('hex')}`)
       }
 
+      if (preparePacket.data.amount === '0') {
+        debug('validated fulfillment for zero-amount packet, not settling.')
+        return
+      }
+
       // send off a transfer in the background to settle
       debug('validated fulfillment. paying settlement.')
       util._requestId()
@@ -664,6 +669,8 @@ class Plugin extends MiniAccountsPlugin {
     if (lastValue.lt(amount)) {
       debug('set new claim for amount', amount)
       account.setIncomingClaim(JSON.stringify(claim))
+    } else if (lastValue.eq(amount)) {
+      debug(`got claim for same amount as before. lastValue=${lastValue}, amount=${amount} (this is not necessarily a problem, but may represent an error on the client's side)`)
     } else {
       debug('last value is less than amount. lastValue=' + lastValue.toString(),
         'amount=' + amount)
