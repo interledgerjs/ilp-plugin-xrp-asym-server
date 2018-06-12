@@ -634,7 +634,7 @@ class Plugin extends MiniAccountsPlugin {
     const { amount, signature } = claim
     const dropAmount = util.xrpToDrops(this.baseToXrp(amount))
     const encodedClaim = util.encodeClaim(dropAmount, account.getChannel())
-    debug('handling claim. account=' + account, 'amount=' + dropAmount)
+    debug('handling claim. account=' + account.getAccount(), 'amount=' + dropAmount)
 
     try {
       valid = nacl.sign.detached.verify(
@@ -679,7 +679,7 @@ class Plugin extends MiniAccountsPlugin {
 
   _handleMoney (from, btpData) {
     const account = this._getAccount(from)
-    debug('handling money. account=' + account)
+    debug('handling money. account=' + account.getAccount())
 
     // TODO: match the transfer amount
     const protocolData = btpData.data.protocolData
