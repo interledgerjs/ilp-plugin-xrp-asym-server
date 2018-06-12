@@ -28,6 +28,9 @@ const serverPlugin = new IlpPluginXrpAsymServer({
   // Max amount to be unsecured at any one time
   maxBalance: 1000000,
 
+  // Maximum packet amount to allow (returns F08 if exceeded)
+  maxPacketAmount: 1000,
+
   // Persistent Key-value store. ILP-Connector will pass
   // this parameter in automatically.
   _store: new Store()
