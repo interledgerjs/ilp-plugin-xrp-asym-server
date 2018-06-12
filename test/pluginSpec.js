@@ -1,5 +1,6 @@
 'use strict' /* eslint-env mocha */
 
+const BigNumber = require('bignumber.js')
 const BtpPacket = require('btp-packet')
 const IlpPacket = require('ilp-packet')
 const crypto = require('crypto')
@@ -613,6 +614,34 @@ describe('pluginSpec', () => {
         .returns([])
       this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, '_requestId')
         .returns(Promise.resolve(1))
+    })
+
+    it('should return a reject if the packet is too big', async function () {
+      this.plugin._maxPacketAmount = new BigNumber(1000)
+      this.prepare = { data: { protocolData: [ {
+        protocolName: 'ilp',
+        contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
+        data: IlpPacket.serializeIlpPrepare({
+          destination: this.from,
+          amount: '1234567',
+          executionCondition: this.condition,
+          expiresAt: new Date(Date.now() + 10000),
+          data: Buffer.alloc(0)
+        })
+      } ] } }
+
+      const res = await this.plugin._handleCustomData(this.from, this.prepare)
+
+      assert.equal(res[0].protocolName, 'ilp')
+
+      const parsed = IlpPacket.deserializeIlpReject(res[0].data)
+
+      assert.deepEqual(parsed, {
+        code: 'F08',
+        triggeredBy: 'test.example.',
+        message: 'Packet size is too large.',
+        data: Buffer.from([ 0, 0, 0, 0, 0, 18, 214, 135, 0, 0, 0, 0, 0, 0, 3, 232 ])
+      })
     })
 
     it('should return a reject if insufficient bandwidth', async function () {

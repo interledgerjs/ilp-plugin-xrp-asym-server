@@ -50,6 +50,7 @@ class Plugin extends MiniAccountsPlugin {
         ' value=' + currencyScale)
     }
 
+    this._maxPacketAmount = new BigNumber(opts.maxPacketAmount || 'Infinity')
     this._currencyScale = (typeof currencyScale === 'number') ? currencyScale : 6
     this._xrpServer = opts.xrpServer
     this._secret = opts.secret
@@ -474,6 +475,13 @@ class Plugin extends MiniAccountsPlugin {
 
     if (account.isBlocked()) {
       throw new Errors.UnreachableError('This account has been closed.')
+    }
+
+    if (this._maxPacketAmount.isLessThan(amount)) {
+      throw new Errors.AmountTooLargeError('Packet size is too large.', {
+        receivedAmount: amount,
+        maximumAmount: this._maxPacketAmount.toString()
+      })
     }
 
     const lastValue = account.getIncomingClaim().amount
