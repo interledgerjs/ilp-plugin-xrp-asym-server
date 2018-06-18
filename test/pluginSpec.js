@@ -231,6 +231,24 @@ describe('pluginSpec', () => {
       assert.equal(this.plugin._channelToAccount.get(this.channelId).getAccount(), this.account)
     })
 
+    it('should load lastClaimedAmount successfully', async function () {
+      this.plugin._api.getPaymentChannel = () => Promise.resolve({
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0.000050',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      })
+
+      this.plugin._store.setCache(this.account + ':channel', this.channelId)
+      await this.plugin._connect(this.from, {})
+      assert.equal(this.plugin._channelToAccount.get(this.channelId).getLastClaimedAmount(), '50')
+    })
+
     it('should delete persisted paychan if it does not exist on the ledger', async function () {
       this.plugin._store.setCache(this.account + ':channel', this.channelId)
       const stub = this.sinon.stub(this.plugin._api, 'getPaymentChannel').callsFake(async () => {
