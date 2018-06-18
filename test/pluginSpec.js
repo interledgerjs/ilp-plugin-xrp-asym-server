@@ -346,6 +346,24 @@ describe('pluginSpec', () => {
         this.plugin._channelClaim(this.account),
         'Error submitting claim')
     })
+
+    it('should not auto claim when more has been claimed than the plugin thought', async function () {
+      this.plugin._api.getPaymentChannel = () => Promise.resolve({
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0.012345',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      })
+
+      const stub = this.sinon.stub(this.plugin._txSubmitter, 'submit').resolves()
+      await this.plugin._channelClaim(this.account)
+      assert.isFalse(stub.called, 'claim should not have been submitted')
+    })
   })
 
   describe('handle money', () => {
