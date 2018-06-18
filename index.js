@@ -124,7 +124,7 @@ class Plugin extends MiniAccountsPlugin {
         account: accountName,
         store: this._store,
         api: this._api,
-        scale: this._currencyScale
+        currencyScale: this._currencyScale
       })
       this._accounts.set(accountName, account)
     }

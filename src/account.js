@@ -56,7 +56,7 @@ class Account {
   }
 
   setLastClaimedAmount (amount) {
-    this._store.set(LAST_CLAIMED(this._account))
+    this._store.set(LAST_CLAIMED(this._account), amount)
   }
 
   isFunding () {
