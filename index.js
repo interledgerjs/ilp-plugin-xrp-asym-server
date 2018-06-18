@@ -154,14 +154,27 @@ class Plugin extends MiniAccountsPlugin {
     debug('creating claim tx. account=' + account.getAccount())
 
     try {
+      debug('querying to make sure a claim is reasonable')
+      const xrpClaimAmount = this.baseToXrp(claim.amount.toString())
+      const paychan = await this._api.getPaymentChannel(channel)
+
+      if (new BigNumber(paychan.balance).gte(xrpClaimAmount)) {
+        const baseBalance = this.xrpToBase(paychan.balance)
+        account.setLastClaimedAmount(baseBalance)
+        debug('claim was lower than channel balance.' +
+          ' balance=' + baseBalance +
+          ' claim=' + claim.amount.toString())
+        return
+      }
+
       await this._txSubmitter.submit('preparePaymentChannelClaim', {
-        balance: this.baseToXrp(claim.amount.toString()),
+        balance: xrpClaimAmount,
         signature: claim.signature.toUpperCase(),
         publicKey,
         channel
       })
     } catch (err) {
-      throw new Error('Error submitting claim')
+      throw new Error('Error submitting claim. err=' + err)
     }
   }
 
