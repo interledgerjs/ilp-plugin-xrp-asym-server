@@ -321,6 +321,18 @@ describe('pluginSpec', () => {
       }), 'unexpected args: ' + JSON.stringify(stub.args))
     })
 
+    it('should scale the claim amount appropriately', async function () {
+      this.plugin._currencyScale = 9
+      const stub = this.sinon.stub(this.plugin._txSubmitter, 'submit').resolves()
+      await this.plugin._channelClaim(this.account)
+      assert(stub.calledWithExactly('preparePaymentChannelClaim', {
+        balance: '0.000013',
+        signature: 'FOO',
+        publicKey: 'bar',
+        channel: '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      }), 'unexpected args: ' + JSON.stringify(stub.args))
+    })
+
     it('should give an error if submit fails', async function () {
       const api = this.plugin._txSubmitter._api
       this.sinon.stub(api, 'preparePaymentChannelClaim').returns({ txJSON: 'xyz' })

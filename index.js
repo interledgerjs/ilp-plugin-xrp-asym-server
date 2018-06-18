@@ -143,7 +143,10 @@ class Plugin extends MiniAccountsPlugin {
   }
 
   async _channelClaim (account) {
-    debug('creating claim for claim. account=' + account.getAccount())
+    debug('creating claim for claim.' +
+      ' account=' + account.getAccount() +
+      ' channel=' + account.getChannel())
+
     const channel = account.getChannel()
     const claim = account.getIncomingClaim()
     const publicKey = account.getPaychan().publicKey
@@ -152,7 +155,7 @@ class Plugin extends MiniAccountsPlugin {
 
     try {
       await this._txSubmitter.submit('preparePaymentChannelClaim', {
-        balance: util.dropsToXrp(claim.amount.toString()),
+        balance: this.baseToXrp(claim.amount.toString()),
         signature: claim.signature.toUpperCase(),
         publicKey,
         channel
