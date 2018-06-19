@@ -1,6 +1,5 @@
 'use strict'
 
-const debug = require('debug')('ilp-plugin-xrp-asym-server:account')
 import { RippleAPI } from 'ripple-lib'
 import BigNumber from 'bignumber.js'
 import StoreWrapper from './store-wrapper'
@@ -22,7 +21,8 @@ export interface AccountParams {
   account: string
   store: StoreWrapper
   api: RippleAPI
-  currencyScale: number
+  currencyScale: number,
+  log: any
 }
 
 export default class Account {
@@ -35,6 +35,7 @@ export default class Account {
   private _clientChannel?: string
   private _funding: boolean
   private _claimIntervalId?: number
+  private _log: any
 
   constructor (opts: AccountParams) {
     this._store = opts.store
@@ -42,6 +43,7 @@ export default class Account {
     this._api = opts.api
     this._currencyScale = opts.currencyScale
     this._funding = false
+    this._log = opts.log
   }
 
   xrpToBase (amount: BigNumber.Value): string {
@@ -104,9 +106,9 @@ export default class Account {
         this._paychan = paychan
         this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
       } catch (e) {
-        debug('failed to load channel entry. error=' + e.message)
+        this._log.error('failed to load channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
-          debug('removing channel because it has been deleted')
+          this._log.error('removing channel because it has been deleted')
           this.deleteChannel()
         }
       }
@@ -176,7 +178,7 @@ export default class Account {
 
   deleteChannel () {
     if (new BigNumber(this.getLastClaimedAmount()).lt(this.getIncomingClaim().amount)) {
-      console.error('Critical Error! Full balance was not able to be claimed before channel deletion.' +
+      this._log.error('Critical Error! Full balance was not able to be claimed before channel deletion.' +
         ' claim=' + this._store.get(INCOMING_CLAIM(this._account)) +
         ' lastClaimedAmount=' + this.getLastClaimedAmount() +
         ' channelId=' + this._store.get(CHANNEL(this._account)))
