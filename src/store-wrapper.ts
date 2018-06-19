@@ -1,11 +1,17 @@
-class StoreWrapper {
-  constructor (store) {
+import { Store } from './util'
+
+export default class StoreWrapper {
+  private _store: any // TODO: store type
+  private _cache: Map<string, string>
+  private _write: Promise<void>
+
+  constructor (store: Store) {
     this._store = store
     this._cache = new Map()
     this._write = Promise.resolve()
   }
 
-  async load (key) {
+  async load (key: string) {
     if (!this._store) return
     if (this._cache.has(key)) return
     const value = await this._store.get(key)
@@ -14,27 +20,25 @@ class StoreWrapper {
     if (!this._cache.has(key)) this._cache.set(key, value)
   }
 
-  get (key) {
+  get (key: string): string | void {
     return this._cache.get(key)
   }
 
-  set (key, value) {
+  set (key: string, value: string) {
     this._cache.set(key, value)
     this._write = this._write.then(() => {
       return this._store.put(key, value)
     })
   }
 
-  delete (key) {
-    this._cache.set(key, undefined)
+  delete (key: string) {
+    this._cache.delete(key)
     this._write = this._write.then(() => {
       return this._store.del(key)
     })
   }
 
-  setCache (key, value) {
+  setCache (key: string, value: string) {
     this._cache.set(key, value)
   }
 }
-
-module.exports = StoreWrapper

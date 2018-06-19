@@ -460,7 +460,7 @@ describe('pluginSpec', () => {
         const spy = this.sinon.spy(this.account, 'setIncomingClaim')
         this.plugin._handleClaim(this.account, this.claim)
 
-        assert.isTrue(spy.calledWith(JSON.stringify(this.claim)))
+        assert.isTrue(spy.calledWith(this.claim))
       })
     })
   })
