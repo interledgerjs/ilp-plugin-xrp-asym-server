@@ -1,69 +1,86 @@
 'use strict'
 
 const debug = require('debug')('ilp-plugin-xrp-asym-server:account')
-const BigNumber = require('bignumber.js')
+import BigNumber from 'bignumber.js'
+import {
+  Claim,
+  Paychan
+} from './util'
 
-const BALANCE = a => a
-const INCOMING_CLAIM = a => a + ':claim'
-const CHANNEL = a => a + ':channel'
-const IS_BLOCKED = a => a + ':block'
-const CLIENT_CHANNEL = a => a + ':client_channel'
-const OUTGOING_BALANCE = a => a + ':outgoing_balance'
-const LAST_CLAIMED = a => a + ':last_claimed'
+const BALANCE = (a: string) => a
+const INCOMING_CLAIM = (a: string) => a + ':claim'
+const CHANNEL = (a: string) => a + ':channel'
+const IS_BLOCKED = (a: string) => a + ':block'
+const CLIENT_CHANNEL = (a: string) => a + ':client_channel'
+const OUTGOING_BALANCE = (a: string) => a + ':outgoing_balance'
+const LAST_CLAIMED = (a: string) => a + ':last_claimed'
 // TODO: the channels to accounts map
 
-class Account {
-  constructor ({ account, store, api, currencyScale }) {
-    this._store = store
-    this._account = account
-    this._api = api
-    this._currencyScale = currencyScale
+export interface AccountParams {
+  account: string
+  store: any
+  api: any
+  currencyScale: number
+}
 
-    this._paychan = null
-    this._clientPaychan = null
-    this._funding = null
-    this._claimIntervalId = null
+export default class Account {
+  private _store: any // TODO: store type
+  private _account: string
+  private _api: any // TODO: rippleAPI type?
+  private _currencyScale: number
+  private _paychan?: Paychan // TODO: paychan details type
+  private _clientPaychan?: Paychan
+  private _clientChannel?: string
+  private _funding: boolean
+  private _claimIntervalId?: number
+
+  constructor (opts: AccountParams) {
+    this._store = opts.store
+    this._account = opts.account
+    this._api = opts.api
+    this._currencyScale = opts.currencyScale
+    this._funding = false
   }
 
-  xrpToBase (amount) {
+  xrpToBase (amount: string | BigNumber): string {
     return new BigNumber(amount)
       .times(Math.pow(10, this._currencyScale))
       .toString()
   }
 
-  getAccount () {
+  getAccount (): string {
     return this._account
   }
 
-  getPaychan () {
+  getPaychan (): any {
     return this._paychan
   }
 
-  getClientPaychan () {
+  getClientPaychan (): Paychan | void {
     return this._clientPaychan
   }
 
-  setClaimIntervalId (claimIntervalId) {
+  setClaimIntervalId (claimIntervalId: number) {
     this._claimIntervalId = claimIntervalId
   }
 
-  getClaimIntervalId () {
+  getClaimIntervalId (): number | void {
     return this._claimIntervalId
   }
 
-  getLastClaimedAmount () {
+  getLastClaimedAmount (): string {
     return this._store.get(LAST_CLAIMED(this._account)) || '0'
   }
 
-  setLastClaimedAmount (amount) {
+  setLastClaimedAmount (amount: string) {
     this._store.set(LAST_CLAIMED(this._account), amount)
   }
 
-  isFunding () {
+  isFunding (): boolean {
     return this._funding
   }
 
-  setFunding (funding) {
+  setFunding (funding: boolean) {
     this._funding = funding
   }
 
@@ -80,8 +97,9 @@ class Account {
 
     if (this.getChannel()) {
       try {
-        this._paychan = await this._api.getPaymentChannel(this.getChannel())
-        this.setLastClaimedAmount(this.xrpToBase(this._paychan.balance))
+        const paychan = await this._api.getPaymentChannel(this.getChannel()) as Paychan
+        this._paychan = paychan
+        this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
       } catch (e) {
         debug('failed to load channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
@@ -110,13 +128,13 @@ class Account {
     return new BigNumber(this._store.get(BALANCE(this._account)) || '0')
   }
 
-  getIncomingClaim () {
+  getIncomingClaim (): Claim {
     const paychanAmount = new BigNumber(this.getLastClaimedAmount())
     const storedClaim = JSON.parse(this._store.get(INCOMING_CLAIM(this._account)) ||
       '{"amount":"0"}')
 
     if (paychanAmount.gt(storedClaim.amount)) {
-      return { amount: paychanAmount }
+      return { amount: paychanAmount.toString() }
     } else {
       return storedClaim
     }
@@ -138,17 +156,17 @@ class Account {
     return new BigNumber(this._store.get(OUTGOING_BALANCE(this._account)))
   }
 
-  setBalance (balance) {
+  setBalance (balance: string) {
     return this._store.set(BALANCE(this._account), balance)
   }
 
-  setIncomingClaim (incomingClaim) {
-    return this._store.set(INCOMING_CLAIM(this._account), incomingClaim)
+  setIncomingClaim (incomingClaim: Claim) {
+    return this._store.set(INCOMING_CLAIM(this._account), JSON.stringify(incomingClaim))
   }
 
-  setChannel (channel, paychan) {
+  setChannel (channel: string, paychan: Paychan) {
     this._paychan = paychan
-    this.setLastClaimedAmount(this.xrpToBase(this._paychan.balance))
+    this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
     return this._store.set(CHANNEL(this._account), channel)
   }
 
@@ -177,14 +195,12 @@ class Account {
     return this._store.set(IS_BLOCKED(this._account), isBlocked)
   }
 
-  async setClientChannel (clientChannel) {
+  async setClientChannel (clientChannel: string) {
     this._clientPaychan = await this._api.getPaymentChannel(clientChannel)
     return this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
   }
 
-  setOutgoingBalance (outgoingBalance) {
+  setOutgoingBalance (outgoingBalance: string) {
     return this._store.set(OUTGOING_BALANCE(this._account), outgoingBalance)
   }
 }
-
-module.exports = Account
