@@ -3,9 +3,21 @@
   "version": "1.4.1",
   "description": "Asymmetric XRP paychan server for ILP",
   "main": "index.js",
+  "types": "src/index.d.ts",
+  "files": [
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.js.map",
+    "src/schemas/*.json"
+  ],
   "scripts": {
-    "test": "nyc --reporter=lcov mocha --exit",
-    "lint": "standard"
+    "build": "npm run compile-ts",
+    "compile-ts": "tsc --project .",
+    "lint": "tslint --project .",
+    "pretest": "npm run build",
+    "watch": "mocha-typescript-watch",
+    "prepare": "npm run build",
+    "test": "nyc --reporter=lcov mocha --exit"
   },
   "author": "",
   "license": "ISC",
@@ -28,7 +40,13 @@
     "chai-as-promised": "^7.1.1",
     "nyc": "^11.4.1",
     "mocha": "^5.0.0",
+    "mocha-typescript": "^1.1.12",
     "sinon": "^4.2.0",
-    "standard": "^10.0.3"
+    "source-map-support": "^0.5.5",
+    "standard": "^10.0.3",
+    "ts-node": "^6.0.2",
+    "tslint": "^5.10.0",
+    "tslint-config-standard": "^7.0.0",
+    "typescript": "^2.8.3"
   }
 }
