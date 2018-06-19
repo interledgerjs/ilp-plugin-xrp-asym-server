@@ -21,13 +21,16 @@ import {
 
 const nacl = require('tweetnacl')
 const BtpPacket = require('btp-packet')
-const debug = require('debug')('ilp-plugin-xrp-server')
 const MiniAccountsPlugin = require('ilp-plugin-mini-accounts')
 
 const OUTGOING_CHANNEL_DEFAULT_AMOUNT = Math.pow(10, 6) // 1 XRP
 const MIN_INCOMING_CHANNEL = 10000000
 const ASSET_SCALE = 6
 const ASSET_CODE = 'XRP'
+
+import * as debug from 'debug'
+import createLogger = require('ilp-logger')
+const DEBUG_NAMESPACE = 'ilp-plugin-xrp-server'
 
 const CHANNEL_KEYS = 'ilp-plugin-multi-xrp-paychan-channel-keys'
 const DEFAULT_TIMEOUT = 30000 // TODO: should this be something else?
@@ -56,7 +59,8 @@ export interface IlpPluginAsymServerOpts {
   bandwidth?: string
   claimInterval?: number
   _store: Store
-  maxFeePercent?: string
+  maxFeePercent?: string,
+  log: any
 }
 
 export default class IlpPluginAsymServer extends MiniAccountsPlugin {
@@ -75,6 +79,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   private _maxFeePercent: string
   private _channelToAccount: Map<string, Account>
   private _accounts: Map<string, Account>
+  private _log: any
 
   constructor (opts: IlpPluginAsymServerOpts) {
     super(opts)
@@ -119,6 +124,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           ' error=' + e.stack)
       }
     })
+
+    this._log = opts.log || createLogger(DEBUG_NAMESPACE)
+    this._log.trace = this._log.trace || debug(DEBUG_NAMESPACE + ':trace')
   }
 
   xrpToBase (amount: BigNumber.Value) {
@@ -140,23 +148,23 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   _validatePaychanDetails (paychan: Paychan) {
     const settleDelay = paychan.settleDelay
     if (settleDelay < util.MIN_SETTLE_DELAY) {
-      debug(`incoming payment channel has a too low settle delay of ${settleDelay.toString()}` +
+      this._log.warn(`incoming payment channel has a too low settle delay of ${settleDelay.toString()}` +
         ` seconds. Minimum settle delay is ${util.MIN_SETTLE_DELAY} seconds.`)
       throw new Error('settle delay of incoming payment channel too low')
     }
 
     if (paychan.cancelAfter) {
-      debug('got incoming payment channel with cancelAfter')
+      this._log.warn('got incoming payment channel with cancelAfter')
       throw new Error('channel must not have a cancelAfter')
     }
 
     if (paychan.expiration) {
-      debug('got incoming payment channel with expiration')
+      this._log.warn('got incoming payment channel with expiration')
       throw new Error('channel must not be in the process of closing')
     }
 
     if (paychan.destination !== this._address) {
-      debug('incoming channel destination is not our address: ' +
+      this._log.warn('incoming channel destination is not our address: ' +
         paychan.destination)
       throw new Error('Channel destination address wrong')
     }
@@ -171,7 +179,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         account: accountName,
         store: this._store,
         api: this._api,
-        currencyScale: this._currencyScale
+        currencyScale: this._currencyScale,
+        log: this._log
       })
       this._accounts.set(accountName, account)
     }
@@ -189,8 +198,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
   }
 
+
   async _channelClaim (account: Account, close: boolean = false) {
-    debug('creating claim for claim.' +
+    this._log.trace('creating claim for claim.' +
       ' account=' + account.getAccount() +
       ' channel=' + account.getChannel() +
       ' close=' + close)
@@ -204,17 +214,17 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const claim = account.getIncomingClaim()
     const publicKey = account.getPaychan().publicKey
 
-    debug('creating claim tx. account=' + account.getAccount())
+    this._log.trace('creating claim tx. account=' + account.getAccount())
 
     try {
-      debug('querying to make sure a claim is reasonable')
+      this._log.trace('querying to make sure a claim is reasonable')
       const xrpClaimAmount = this.baseToXrp(claim.amount.toString())
       const paychan = await this._api.getPaymentChannel(channel)
 
       if (new BigNumber(paychan.balance).gte(xrpClaimAmount)) {
         const baseBalance = this.xrpToBase(paychan.balance)
         account.setLastClaimedAmount(baseBalance)
-        debug('claim was lower than channel balance.' +
+        this._log.trace('claim was lower than channel balance.' +
           ' balance=' + baseBalance +
           ' claim=' + claim.amount.toString())
         return
@@ -269,12 +279,12 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         this._channelToAccount.set(existingChannel, account)
         await this._registerAutoClaim(account)
       } catch (e) {
-        debug('deleting channel because of failed validate. error=', e)
+        this._log.debug('deleting channel because of failed validate. error=', e)
         try {
           await this._channelClaim(account)
           account.deleteChannel()
         } catch (err) {
-          debug('could not delete channel. error=', err)
+          this._log.error('could not delete channel. error=', err)
           // should the account be blocked?
         }
       }
@@ -285,7 +295,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   async _fundOutgoingChannel (account: Account, primary: Protocol) {
     if (account.getClientChannel()) {
-      debug('outgoing channel already exists')
+      this._log.warn('outgoing channel already exists')
       return account.getClientPaychan()
     }
 
@@ -294,7 +304,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     const outgoingAccount = primary.data.toString()
 
-    debug('creating outgoing channel fund transaction')
+    this._log.trace('creating outgoing channel fund transaction')
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const txTag = util.randomTag()
@@ -312,7 +322,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       ev.transaction.Destination,
       ev.transaction.Sequence)
 
-    debug('created outgoing channel. channel=', clientChannelId)
+    this._log.trace('created outgoing channel. channel=', clientChannelId)
+    const clientPaychan = await this._api.getPaymentChannel(clientChannelId)
     account.setOutgoingBalance('0')
     await account.setClientChannel(clientChannelId)
 
@@ -332,7 +343,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const info = protocols.filter((p: Protocol) => p.protocolName === 'info')[0]
 
     if (getLastClaim) {
-      debug('got request for last claim. claim=', account.getIncomingClaim())
+      this._log.trace('got request for last claim. claim=', account.getIncomingClaim())
       return [{
         protocolName: 'last_claim',
         contentType: BtpPacket.MIME_APPLICATION_JSON,
@@ -341,7 +352,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     if (info) {
-      debug('got info request')
+      this._log.trace('got info request')
       return [{
         protocolName: 'info',
         contentType: BtpPacket.MIME_APPLICATION_JSON,
@@ -350,7 +361,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     if (channelProtocol) {
-      debug('got message for incoming channel. account=', account.getAccount())
+      this._log.trace('got message for incoming channel. account=', account.getAccount())
       const channel = channelProtocol.data
         .toString('hex')
         .toUpperCase()
@@ -399,17 +410,17 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
       await this._watcher.watch(channel)
       await this._registerAutoClaim(account)
-      debug('registered payment channel. account=', account.getAccount())
+      this._log.trace('registered payment channel. account=', account.getAccount())
     }
 
     if (fundChannel) {
       if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(MIN_INCOMING_CHANNEL)) {
-        debug('denied outgoing paychan request; not enough has been escrowed')
+        this._log.debug('denied outgoing paychan request; not enough has been escrowed')
         throw new Error('not enough has been escrowed in channel; must put ' +
           MIN_INCOMING_CHANNEL + ' drops on hold')
       }
 
-      debug('an outgoing paychan has been authorized for ', account.getAccount(), '; establishing')
+      this._log.info('an outgoing paychan has been authorized for ', account.getAccount(), '; establishing')
       const clientChannelId = await this._fundOutgoingChannel(account, fundChannel)
       return [{
         protocolName: 'fund_channel',
@@ -471,7 +482,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const fee = new BigNumber(this.xrpToBase(await this._api.getFee()))
     const income = new BigNumber(amount).minus(lastClaimedAmount)
 
-    debug('calculating auto-claim. account=' + account.getAccount(), 'amount=' + amount,
+    this._log.trace('calculating auto-claim. account=' + account.getAccount(), 'amount=' + amount,
       'lastClaimedAmount=' + lastClaimedAmount, 'fee=' + fee)
 
     return income.isGreaterThan(0) && fee.dividedBy(income).lte(this._maxFeePercent)
@@ -480,13 +491,13 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   async _autoClaim (account: Account) {
     if (await this._isClaimProfitable(account)) {
       const amount = account.getIncomingClaim().amount
-      debug('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
+      this._log.trace('starting automatic claim. amount=' + amount + ' account=' + account.getAccount())
       account.setLastClaimedAmount(amount)
       try {
         await this._channelClaim(account)
-        debug('claimed funds. account=' + account.getAccount())
+        this._log.trace('claimed funds. account=' + account.getAccount())
       } catch (err) {
-        debug('WARNING. Error on claim submission: ', err)
+        this._log.warn('WARNING. Error on claim submission: ', err)
       }
     }
   }
@@ -494,7 +505,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   async _registerAutoClaim (account: Account) {
     if (account.getClaimIntervalId()) return
 
-    debug('registering auto-claim. interval=' + this._claimInterval,
+    this._log.trace('registering auto-claim. interval=' + this._claimInterval,
       'account=' + account.getAccount())
 
     account.setClaimIntervalId(setInterval(
@@ -550,7 +561,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const prepared = account.getBalance()
     const newPrepared = prepared.plus(amount)
     const unsecured = newPrepared.minus(lastValue)
-    debug(unsecured.toString(), 'unsecured; last claim is',
+    this._log.trace(unsecured.toString(), 'unsecured; last claim is',
       lastValue.toString(), 'prepared amount', amount, 'newPrepared',
       newPrepared.toString(), 'prepared', prepared.toString())
 
@@ -567,7 +578,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     account.setBalance(newPrepared.toString())
-    debug(`account ${account.getAccount()} debited ${amount} units, new balance ${newPrepared.toString()}`)
+    this._log.trace(`account ${account.getAccount()} debited ${amount} units, new balance ${newPrepared.toString()}`)
   }
 
   _rejectIncomingTransfer (account: Account, ilpData: Buffer) {
@@ -576,7 +587,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const newPrepared = prepared.minus(amount)
 
     account.setBalance(newPrepared.toString())
-    debug(`account ${account.getAccount()} roll back ${amount} units, new balance ${newPrepared.toString()}`)
+    this._log.trace(`account ${account.getAccount()} roll back ${amount} units, new balance ${newPrepared.toString()}`)
   }
 
   _sendPrepare (destination: string, parsedPacket: IlpPacket.IlpPacket) {
@@ -584,26 +595,26 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: IlpPacket.IlpPacket) {
-    debug('got prepare response', parsedResponse)
+    this._log.trace('got prepare response', parsedResponse)
     if (parsedResponse.type === IlpPacket.Type.TYPE_ILP_FULFILL) {
       if (!crypto.createHash('sha256')
         .update(parsedResponse.data.fulfillment)
         .digest()
         .equals(preparePacket.data.executionCondition)) {
-          // TODO: could this leak data if the fulfillment is wrong in
-          // a predictable way?
+        // TODO: could this leak data if the fulfillment is wrong in
+        // a predictable way?
         throw new Errors.WrongConditionError(`condition and fulfillment don't match.
             condition=${preparePacket.data.executionCondition.toString('hex')}
             fulfillment=${parsedResponse.data.fulfillment.toString('hex')}`)
       }
 
       if (preparePacket.data.amount === '0') {
-        debug('validated fulfillment for zero-amount packet, not settling.')
+        this._log.trace('validated fulfillment for zero-amount packet, not settling.')
         return
       }
 
       // send off a transfer in the background to settle
-      debug('validated fulfillment. paying settlement.')
+      this._log.trace('validated fulfillment. paying settlement.')
       util._requestId()
         .then((requestId: number) => {
           return this._call(destination, {
@@ -618,7 +629,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           })
         })
         .catch((e: Error) => {
-          debug(`failed to pay account.
+          this._log.error(`failed to pay account.
             destination=${destination}
             error=${e && e.stack}`)
         })
@@ -636,7 +647,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const currentBalance = account.getOutgoingBalance()
     const newBalance = currentBalance.plus(transferAmount)
     account.setOutgoingBalance(newBalance.toString())
-    debug(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
+    this._log.trace(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
 
     // sign a claim
     const clientChannel = account.getClientChannel()
@@ -650,7 +661,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
     const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
 
-    debug(`signing outgoing claim for ${newDropBalance.toString()} drops on ` +
+    this._log.trace(`signing outgoing claim for ${newDropBalance.toString()} drops on ` +
       `channel ${clientChannel}`)
 
     const clientPaychan = account.getClientPaychan()
@@ -666,7 +677,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     // if the claim we're signing is for more than the channel's max balance
     // minus half the minimum balance, add some funds
     if (!account.isFunding() && aboveThreshold) {
-      debug('adding funds to channel. account=', account.getAccount())
+      this._log.info('adding funds to channel. account=', account.getAccount())
       account.setFunding(true)
       util.fundChannel({
         api: this._api,
@@ -679,7 +690,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         .then(async () => {
           await account.setClientChannel(clientChannel) // reloads the channel amount
           account.setFunding(false)
-          debug('completed fund tx. account=', account.getAccount())
+          this._log.trace('completed fund tx. account=', account.getAccount())
           await this._call(to, {
             type: BtpPacket.TYPE_MESSAGE,
             requestId: await util._requestId(),
@@ -691,7 +702,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           })
         })
         .catch((e: Error) => {
-          debug('funding tx/notify failed:', e)
+          this._log.error('funding tx/notify failed:', e)
           account.setFunding(false)
         })
     }
@@ -717,7 +728,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     const dropAmount = util.xrpToDrops(this.baseToXrp(amount))
     const encodedClaim = util.encodeClaim(dropAmount, account.getChannel())
-    debug('handling claim. account=' + account.getAccount(), 'amount=' + dropAmount)
+    this._log.trace('handling claim. account=' + account.getAccount(), 'amount=' + dropAmount)
 
     try {
       valid = nacl.sign.detached.verify(
@@ -726,12 +737,12 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         Buffer.from(account.getPaychan().publicKey.substring(2), 'hex')
       )
     } catch (err) {
-      debug('verifying signature failed:', err.message)
+      this._log.debug('verifying signature failed:', err.message)
     }
 
     // TODO: better reconciliation if claims are invalid
     if (!valid) {
-      debug(`got invalid claim signature ${signature} for amount ${dropAmount} drops`)
+      this._log.error(`got invalid claim signature ${signature} for amount ${dropAmount} drops`)
       /* throw new Error('got invalid claim signature ' +
         signature + ' for amount ' + amount + ' drops') */
       throw new Error('Invalid claim: invalid signature')
@@ -739,30 +750,30 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     // validate claim against balance
     const channelBalance = util.xrpToDrops(account.getPaychan().amount)
-    debug('got channel balance. balance=' + channelBalance)
+    this._log.trace('got channel balance. balance=' + channelBalance)
     if (new BigNumber(dropAmount).gt(channelBalance)) {
       const message = 'got claim for amount higher than channel balance. amount: ' + dropAmount + ', incoming channel balance: ' + channelBalance
-      debug(message)
+      this._log.error(message)
       // throw new Error(message)
       throw new Error('Invalid claim: claim amount (' + dropAmount + ') exceeds channel balance (' + channelBalance + ')')
     }
 
     const lastValue = new BigNumber(account.getIncomingClaim().amount)
-    debug('got last value. value=' + lastValue.toString(), 'signature=' + account.getIncomingClaim().signature)
+    this._log.trace('got last value. value=' + lastValue.toString(), 'signature=' + account.getIncomingClaim().signature)
     if (lastValue.lt(amount)) {
-      debug('set new claim for amount', amount)
+      this._log.trace('set new claim for amount', amount)
       account.setIncomingClaim(claim)
     } else if (lastValue.eq(amount)) {
-      debug(`got claim for same amount as before. lastValue=${lastValue}, amount=${amount} (this is not necessarily a problem, but may represent an error on the client's side)`)
+      this._log.trace(`got claim for same amount as before. lastValue=${lastValue}, amount=${amount} (this is not necessarily a problem, but may represent an error on the client's side)`)
     } else {
-      debug('last value is less than amount. lastValue=' + lastValue.toString(),
+      this._log.trace('last value is less than amount. lastValue=' + lastValue.toString(),
         'amount=' + amount)
     }
   }
 
   _handleMoney (from: string, btpData: BtpData) {
     const account = this._getAccount(from)
-    debug('handling money. account=' + account.getAccount())
+    this._log.trace('handling money. account=' + account.getAccount())
 
     // TODO: match the transfer amount
     const protocolData = btpData.data.protocolData
@@ -774,7 +785,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const [ jsonClaim ] = btpData.data.protocolData
       .filter((p: Protocol) => p.protocolName === 'claim')
     if (!jsonClaim || !jsonClaim.data.length) {
-      debug('no claim was supplied on transfer')
+      this._log.debug('no claim was supplied on transfer')
       throw new Error('No claim was supplied on transfer')
     }
 
@@ -783,7 +794,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   async _disconnect () {
-    debug('disconnecting accounts and api')
+    this._log.info('disconnecting accounts and api')
     for (const account of this._accounts.values()) {
       const interval = account.getClaimIntervalId()
       if (interval) clearInterval(interval)
