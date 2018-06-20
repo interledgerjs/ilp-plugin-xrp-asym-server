@@ -33,6 +33,6 @@ export type Paychan = {
 
 export type Store = {
   get: (key: string) => Promise<string | void>
-  set: (key: string, value: string) => Promise<void>
+  put: (key: string, value: string) => Promise<void>
   del: (key: string) => Promise<void>
 }

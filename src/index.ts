@@ -121,13 +121,13 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     })
   }
 
-  xrpToBase (amount: string | BigNumber) {
+  xrpToBase (amount: BigNumber.Value) {
     return new BigNumber(amount)
       .times(Math.pow(10, this._currencyScale))
       .toString()
   }
 
-  baseToXrp (amount: string | BigNumber) {
+  baseToXrp (amount: BigNumber.Value) {
     return new BigNumber(amount)
       .div(Math.pow(10, this._currencyScale))
       .toFixed(6, BigNumber.ROUND_UP)
@@ -195,6 +195,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       ' channel=' + account.getChannel())
 
     const channel = account.getChannel()
+    if (!channel) {
+      throw new Error('no channel exists. ' +
+        'account=' + account.getAccount())
+    }
+
     const claim = account.getIncomingClaim()
     const publicKey = account.getPaychan().publicKey
 
@@ -651,6 +656,10 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     // sign a claim
     const clientChannel = account.getClientChannel()
+    if (!clientChannel) {
+      throw new Error('no client channel exists')
+    }
+
     const newDropBalance = util.xrpToDrops(this.baseToXrp(newBalance))
     const encodedClaim = util.encodeClaim(newDropBalance.toString(), clientChannel)
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
