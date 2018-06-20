@@ -1,8 +1,8 @@
 import { Store } from './util'
 
 export default class StoreWrapper {
-  private _store: any // TODO: store type
-  private _cache: Map<string, string>
+  private _store?: Store
+  private _cache: Map<string, string | void>
   private _write: Promise<void>
 
   constructor (store: Store) {
@@ -20,6 +20,12 @@ export default class StoreWrapper {
     if (!this._cache.has(key)) this._cache.set(key, value)
   }
 
+  unload (key: string) {
+    if (this._cache.has(key)) {
+      this._cache.delete(key)
+    }
+  }
+
   get (key: string): string | void {
     return this._cache.get(key)
   }
@@ -27,14 +33,18 @@ export default class StoreWrapper {
   set (key: string, value: string) {
     this._cache.set(key, value)
     this._write = this._write.then(() => {
-      return this._store.put(key, value)
+      if (this._store) {
+        return this._store.put(key, value)
+      }
     })
   }
 
   delete (key: string) {
     this._cache.delete(key)
     this._write = this._write.then(() => {
-      return this._store.del(key)
+      if (this._store) {
+        return this._store.del(key)
+      }
     })
   }
 

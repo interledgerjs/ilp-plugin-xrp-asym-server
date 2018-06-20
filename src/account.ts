@@ -1,7 +1,9 @@
 'use strict'
 
 const debug = require('debug')('ilp-plugin-xrp-asym-server:account')
+import { RippleAPI } from 'ripple-lib'
 import BigNumber from 'bignumber.js'
+import StoreWrapper from './store-wrapper'
 import {
   Claim,
   Paychan
@@ -18,17 +20,17 @@ const LAST_CLAIMED = (a: string) => a + ':last_claimed'
 
 export interface AccountParams {
   account: string
-  store: any
-  api: any
+  store: StoreWrapper
+  api: RippleAPI
   currencyScale: number
 }
 
 export default class Account {
-  private _store: any // TODO: store type
+  private _store: StoreWrapper
   private _account: string
-  private _api: any // TODO: rippleAPI type?
+  private _api: RippleAPI // TODO: rippleAPI type?
   private _currencyScale: number
-  private _paychan?: Paychan // TODO: paychan details type
+  private _paychan?: Paychan
   private _clientPaychan?: Paychan
   private _clientChannel?: string
   private _funding: boolean
@@ -42,7 +44,7 @@ export default class Account {
     this._funding = false
   }
 
-  xrpToBase (amount: string | BigNumber): string {
+  xrpToBase (amount: BigNumber.Value): string {
     return new BigNumber(amount)
       .times(Math.pow(10, this._currencyScale))
       .toString()
@@ -95,9 +97,10 @@ export default class Account {
       this._store.load(LAST_CLAIMED(this._account))
     ])
 
-    if (this.getChannel()) {
+    const channelId = this.getChannel()
+    if (channelId) {
       try {
-        const paychan = await this._api.getPaymentChannel(this.getChannel()) as Paychan
+        const paychan = await this._api.getPaymentChannel(channelId) as Paychan
         this._paychan = paychan
         this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
       } catch (e) {
@@ -109,9 +112,10 @@ export default class Account {
       }
     }
 
-    if (this.getClientChannel()) {
-      this._clientPaychan = await this._api.getPaymentChannel(this.getClientChannel())
-        .catch(() => ({}))
+    const clientChannelId = this.getClientChannel()
+    if (clientChannelId) {
+      this._clientPaychan = await this._api.getPaymentChannel(clientChannelId)
+        .catch(() => ({})) as Paychan
     }
   }
 
@@ -145,7 +149,7 @@ export default class Account {
   }
 
   isBlocked () {
-    return this._store.get(IS_BLOCKED(this._account))
+    return this._store.get(IS_BLOCKED(this._account)) === 'true'
   }
 
   getClientChannel () {
@@ -153,7 +157,7 @@ export default class Account {
   }
 
   getOutgoingBalance () {
-    return new BigNumber(this._store.get(OUTGOING_BALANCE(this._account)))
+    return new BigNumber(this._store.get(OUTGOING_BALANCE(this._account)) || '0')
   }
 
   setBalance (balance: string) {
@@ -192,11 +196,11 @@ export default class Account {
   }
 
   block (isBlocked = true) {
-    return this._store.set(IS_BLOCKED(this._account), isBlocked)
+    return this._store.set(IS_BLOCKED(this._account), String(isBlocked))
   }
 
   async setClientChannel (clientChannel: string) {
-    this._clientPaychan = await this._api.getPaymentChannel(clientChannel)
+    this._clientPaychan = await this._api.getPaymentChannel(clientChannel) as Paychan
     return this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
   }
 
