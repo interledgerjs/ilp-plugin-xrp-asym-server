@@ -74,7 +74,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   private _txSubmitter: any
   private _maxFeePercent: string
   private _channelToAccount: Map<string, Account>
-  private _accounts: Map<string, Account>  
+  private _accounts: Map<string, Account>
 
   constructor (opts: IlpPluginAsymServerOpts) {
     super(opts)
@@ -86,6 +86,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     const currencyScale = opts.assetScale || opts.currencyScale
 
+    // Typescript thinks we don't need to check this, but it's being called
+    // from regular javascript so we still need this.
+    /* tslint:disable-next-line:strict-type-predicates */
     if (typeof currencyScale !== 'number' && currencyScale !== undefined) {
       throw new Error('currency scale must be a number if specified.' +
         ' type=' + (typeof currencyScale) +
@@ -130,7 +133,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       .toFixed(6, BigNumber.ROUND_UP)
   }
 
-  sendTransfer () {}
+  sendTransfer () {
+    debug('send transfer no-op')
+  }
 
   _validatePaychanDetails (paychan: Paychan) {
     const settleDelay = paychan.settleDelay
@@ -328,7 +333,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   async _handleCustomData (from: string, message: BtpData) {
     const account = this._getAccount(from)
     const protocols = message.data.protocolData
-    if (!protocols.length) return
+    if (!protocols.length) return undefined
 
     const getLastClaim = protocols.filter((p: Protocol) => p.protocolName === 'last_claim')[0]
     const fundChannel = protocols.filter((p: Protocol) => p.protocolName === 'fund_channel')[0]
