@@ -189,10 +189,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
   }
 
-  async _channelClaim (account: Account) {
+  async _channelClaim (account: Account, close: boolean = false) {
     debug('creating claim for claim.' +
       ' account=' + account.getAccount() +
-      ' channel=' + account.getChannel())
+      ' channel=' + account.getChannel() +
+      ' close=' + close)
 
     const channel = account.getChannel()
     if (!channel) {
@@ -227,6 +228,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         balance: xrpClaimAmount,
         signature: claim.signature.toUpperCase(),
         publicKey,
+        close,
         channel
       })
     } catch (err) {
@@ -243,25 +245,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     // disable the account once the channel is closing
     account.block()
-
-    // close our outgoing channel to them
-    debug('creating claim for closure')
-    const balance = account.getBalance()
-    const dropBalance = util.xrpToDrops(this.baseToXrp(balance))
-    const channel = account.getClientChannel()
-    const encodedClaim = util.encodeClaim(dropBalance.toString(), channel)
-    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
-    const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
-    const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
-
-    debug('creating close tx')
-    await this._txSubmitter.submit('preparePaymentChannelClaim', {
-      balance: this.baseToXrp(balance),
-      signature: signature.toString('hex').toUpperCase(),
-      publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
-      channel,
-      close: true
-    })
+    await this._channelClaim(account, true)
   }
 
   async _preConnect () {
