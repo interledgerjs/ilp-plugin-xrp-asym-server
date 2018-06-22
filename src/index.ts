@@ -323,7 +323,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       ev.transaction.Sequence)
 
     this._log.trace('created outgoing channel. channel=', clientChannelId)
-    const clientPaychan = await this._api.getPaymentChannel(clientChannelId)
     account.setOutgoingBalance('0')
     await account.setClientChannel(clientChannelId)
 
