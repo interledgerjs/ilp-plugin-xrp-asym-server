@@ -147,6 +147,11 @@ describe('pluginSpec', () => {
         previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
         previousAffectingTransactionLedgerVersion: 6089142
       }
+      this.account.setChannel(this.channelId, this.paychan)
+      this.account.setIncomingClaim({
+        amount: 1000,
+        signature: 'foo'
+      })
     })
 
     it('should call channelClose when close event is emitted', async function () {
@@ -164,7 +169,7 @@ describe('pluginSpec', () => {
       const [ method, args ] = submitStub.firstCall.args
       assert.equal(method, 'preparePaymentChannelClaim')
       assert.equal(args.balance, '0.001000')
-      assert.equal(args.publicKey, 'ED2E692BBF353D5EE420F86DF0A2AB0712758F8B4BA27EC46365DAA36CAE1CA4F1')
+      assert.equal(args.publicKey, 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D')
       assert.equal(args.channel, this.channelId)
       assert.equal(args.close, true)
     })
@@ -317,6 +322,7 @@ describe('pluginSpec', () => {
         balance: '0.012345',
         signature: 'FOO',
         publicKey: 'bar',
+        close: false,
         channel: '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       }), 'unexpected args: ' + JSON.stringify(stub.args))
     })
@@ -329,6 +335,7 @@ describe('pluginSpec', () => {
         balance: '0.000013',
         signature: 'FOO',
         publicKey: 'bar',
+        close: false,
         channel: '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       }), 'unexpected args: ' + JSON.stringify(stub.args))
     })
