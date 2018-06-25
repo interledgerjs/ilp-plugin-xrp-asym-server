@@ -590,7 +590,10 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   _sendPrepare (destination: string, parsedPacket: IlpPacket.IlpPacket) {
-    // TODO: do we need anything here?
+    // filter out route control messages to prevent noise in the connector
+    if (destination.startsWith('peer.route')) {
+      throw new Error('rejecting route control message from non-peer')
+    }
   }
 
   _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: IlpPacket.IlpPacket) {
