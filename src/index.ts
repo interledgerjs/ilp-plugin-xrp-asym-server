@@ -198,7 +198,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
   }
 
-
   async _channelClaim (account: Account, close: boolean = false) {
     this._log.trace('creating claim for claim.' +
       ' account=' + account.getAccount() +
