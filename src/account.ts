@@ -73,7 +73,7 @@ export default class Account {
   }
 
   getLastClaimedAmount (): string {
-    return this._store.get(LAST_CLAIMED(this._account)) || '0'
+    return this._store.getString(LAST_CLAIMED(this._account)) || '0'
   }
 
   setLastClaimedAmount (amount: string) {
@@ -90,13 +90,13 @@ export default class Account {
 
   async connect () {
     await Promise.all([
-      this._store.load(BALANCE(this._account)),
-      this._store.load(INCOMING_CLAIM(this._account)),
-      this._store.load(CHANNEL(this._account)),
-      this._store.load(IS_BLOCKED(this._account)),
-      this._store.load(CLIENT_CHANNEL(this._account)),
-      this._store.load(OUTGOING_BALANCE(this._account)),
-      this._store.load(LAST_CLAIMED(this._account))
+      this._store.loadString(BALANCE(this._account)),
+      this._store.loadObject(INCOMING_CLAIM(this._account)),
+      this._store.loadString(CHANNEL(this._account)),
+      this._store.loadString(IS_BLOCKED(this._account)),
+      this._store.loadString(CLIENT_CHANNEL(this._account)),
+      this._store.loadString(OUTGOING_BALANCE(this._account)),
+      this._store.loadString(LAST_CLAIMED(this._account))
     ])
 
     const channelId = this.getChannel()
@@ -131,13 +131,13 @@ export default class Account {
   }
 
   getBalance () {
-    return new BigNumber(this._store.get(BALANCE(this._account)) || '0')
+    return new BigNumber(this._store.getString(BALANCE(this._account)) || '0')
   }
 
   getIncomingClaim (): Claim {
     const paychanAmount = new BigNumber(this.getLastClaimedAmount())
-    const storedClaim = JSON.parse(this._store.get(INCOMING_CLAIM(this._account)) ||
-      '{"amount":"0"}')
+    const storedClaim = this._store.getObject(INCOMING_CLAIM(this._account)) as Claim ||
+      { amount: '0' }
 
     if (paychanAmount.gt(storedClaim.amount)) {
       return { amount: paychanAmount.toString() }
@@ -147,19 +147,19 @@ export default class Account {
   }
 
   getChannel () {
-    return this._store.get(CHANNEL(this._account))
+    return this._store.getString(CHANNEL(this._account))
   }
 
   isBlocked () {
-    return this._store.get(IS_BLOCKED(this._account)) === 'true'
+    return this._store.getString(IS_BLOCKED(this._account)) === 'true'
   }
 
   getClientChannel () {
-    return this._store.get(CLIENT_CHANNEL(this._account))
+    return this._store.getString(CLIENT_CHANNEL(this._account))
   }
 
   getOutgoingBalance () {
-    return new BigNumber(this._store.get(OUTGOING_BALANCE(this._account)) || '0')
+    return new BigNumber(this._store.getString(OUTGOING_BALANCE(this._account)) || '0')
   }
 
   setBalance (balance: string) {
@@ -167,7 +167,7 @@ export default class Account {
   }
 
   setIncomingClaim (incomingClaim: Claim) {
-    return this._store.set(INCOMING_CLAIM(this._account), JSON.stringify(incomingClaim))
+    return this._store.set(INCOMING_CLAIM(this._account), incomingClaim)
   }
 
   setChannel (channel: string, paychan: Paychan) {
@@ -179,9 +179,9 @@ export default class Account {
   deleteChannel () {
     if (new BigNumber(this.getLastClaimedAmount()).lt(this.getIncomingClaim().amount)) {
       this._log.error('Critical Error! Full balance was not able to be claimed before channel deletion.' +
-        ' claim=' + this._store.get(INCOMING_CLAIM(this._account)) +
+        ' claim=' + JSON.stringify(this._store.getObject(INCOMING_CLAIM(this._account))) +
         ' lastClaimedAmount=' + this.getLastClaimedAmount() +
-        ' channelId=' + this._store.get(CHANNEL(this._account)))
+        ' channelId=' + this._store.getString(CHANNEL(this._account)))
     }
 
     const newBalance = new BigNumber(this.getBalance())
