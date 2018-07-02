@@ -266,8 +266,8 @@ describe('pluginSpec', () => {
       await this.plugin._connect(this.from, {})
       assert.isTrue(stub.calledWith(this.channelId))
       assert.isNotOk(this.plugin._channelToAccount.get(this.channelId))
-      assert.isNotOk(this.plugin._store.get(this.account + ':channel'))
-      assert.isNotOk(this.plugin._store.get(this.account + ':last_claimed'))
+      assert.isNotOk(this.plugin._store.getString(this.account + ':channel'))
+      assert.isNotOk(this.plugin._store.getString(this.account + ':last_claimed'))
     })
   })
 
@@ -308,10 +308,10 @@ describe('pluginSpec', () => {
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
-      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
         signature: 'foo'
-      }))
+      })
       this.account._paychan = { publicKey: 'bar', balance: '0' }
     })
 
@@ -379,10 +379,10 @@ describe('pluginSpec', () => {
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
-      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
         signature: 'foo'
-      }))
+      })
       this.account._paychan = {
         account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
         amount: '1',
@@ -479,10 +479,10 @@ describe('pluginSpec', () => {
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':client_channel', this.channelId)
-      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
         signature: 'foo'
-      }))
+      })
       this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', '12345')
       this.claim = {
         amount: '12345',
@@ -521,7 +521,7 @@ describe('pluginSpec', () => {
 
           this.plugin._keyPair = {}
           this.plugin._funding = true
-          this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', 990)
+          this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', '990')
         })
 
         it('should round high-scale amount up to next drop', async function () {
@@ -623,10 +623,10 @@ describe('pluginSpec', () => {
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
-      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
         signature: 'foo'
-      }))
+      })
       this.account._paychan = {
         account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
         amount: '1',
@@ -751,10 +751,10 @@ describe('pluginSpec', () => {
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':last_claimed', '12300')
-      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '13901',
         signature: 'foo'
-      }))
+      })
       this.account._paychan = {
         account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
         amount: '1',
@@ -788,10 +788,10 @@ describe('pluginSpec', () => {
       beforeEach(function () {
         this.plugin._currencyScale = 9
         this.plugin._store.setCache(this.account.getAccount() + ':last_claimed', '12300000')
-        this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+        this.plugin._store.setCache(this.account.getAccount() + ':claim', {
           amount: '13901000',
           signature: 'foo'
-        }))
+        })
       })
 
       it('should auto claim when amount is more than 100 * fee + last claim', async function () {
@@ -818,10 +818,10 @@ describe('pluginSpec', () => {
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
-      this.plugin._store.setCache(this.account.getAccount() + ':claim', JSON.stringify({
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
         signature: 'foo'
-      }))
+      })
       this.account._paychan = {
         account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
         amount: '1',
