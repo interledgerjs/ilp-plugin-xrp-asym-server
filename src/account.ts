@@ -17,12 +17,26 @@ const OUTGOING_BALANCE = (a: string) => a + ':outgoing_balance'
 const LAST_CLAIMED = (a: string) => a + ':last_claimed'
 // TODO: the channels to accounts map
 
+const RETRY_DELAY = 2000
+
 export interface AccountParams {
   account: string
   store: StoreWrapper
   api: RippleAPI
   currencyScale: number,
   log: any
+}
+
+export enum ReadyState {
+  INITIAL = 0,
+  LOADING_CHANNEL = 1,
+  ESTABLISHING_CHANNEL = 2,
+  PREPARING_CHANNEL = 3,
+  LOADING_CLIENT_CHANNEL = 4,
+  ESTABLISHING_CLIENT_CHANNEL = 5,
+  PREPARING_CLIENT_CHANNEL = 6,
+  READY = 7,
+  BLOCKED = 8
 }
 
 export default class Account {
@@ -36,6 +50,7 @@ export default class Account {
   private _funding: boolean
   private _claimIntervalId?: number
   private _log: any
+  private _state: ReadyState
 
   constructor (opts: AccountParams) {
     this._store = opts.store
@@ -44,6 +59,7 @@ export default class Account {
     this._currencyScale = opts.currencyScale
     this._funding = false
     this._log = opts.log
+    this._state = ReadyState.LOADING_STORE
   }
 
   xrpToBase (amount: BigNumber.Value): string {
@@ -89,6 +105,8 @@ export default class Account {
   }
 
   async connect () {
+    this._assertState(ReadyState.INITIAL)
+
     await Promise.all([
       this._store.load(BALANCE(this._account)),
       this._store.loadObject(INCOMING_CLAIM(this._account)),
@@ -99,29 +117,71 @@ export default class Account {
       this._store.load(LAST_CLAIMED(this._account))
     ])
 
+    this._state = ReadyState.LOADING_CHANNEL
+    return this.connectChannel()
+  }
+
+  async connectChannel () {
+    this._assertState(ReadyState.LOADING_CHANNEL)
+
     const channelId = this.getChannel()
     if (channelId) {
       try {
         const paychan = await this._api.getPaymentChannel(channelId) as Paychan
         this._paychan = paychan
         this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
+
+        this._state = ReadyState.LOADING_CLIENT_CHANNEL
+        return this._loadClientChannel
       } catch (e) {
         this._log.error('failed to load channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
           this._log.error('removing channel because it has been deleted')
           this.deleteChannel()
+          this._state = ReadyState.BLOCKED // TODO: can we just ask for a new channel?
+          return // TODO: do we need to do anything with the client channel still?
+        } else if (e.name === 'TimeoutError') {
+          // TODO: should this apply for all other errors too?
+          this._log.error('timed out loading channel. retrying. account=' + this.getAccount())
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+          return this.connectChannel()
         }
       }
+    } else {
+      this._state = ReadyState.ESTABLISHING_CHANNEL
     }
+  }
+
+  async connectClientChannel () {
+    this._assertState(ReadyState.LOADING_CLIENT_CHANNEL)
 
     const clientChannelId = this.getClientChannel()
     if (clientChannelId) {
-      this._clientPaychan = await this._api.getPaymentChannel(clientChannelId)
-        .catch(() => ({})) as Paychan
+      try {
+        this._clientPaychan = await this._api.getPaymentChannel(clientChannelId)
+      } catch (e) {
+        this._log.error('failed to load client channel entry. error=' + e.message)
+        if (e.name === 'RippledError' && e.message === 'entryNotFound') {
+          this._log.error('blocking account because client channel cannot be loaded.')
+          this._state = ReadyState.BLOCKED // TODO: can we just ask for a new channel?
+          return // TODO: do we need to do anything with the client channel still?
+        } else if (e.name === 'TimeoutError') {
+          this._log.error('timed out loading client channel. retrying. account=' + this.getAccount())
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+          return this.connectClientChannel()
+        }
+      }
+    } else {
+      if (this._state === ReadyState.LOADING_NETWORK) {
+        // in this scenario we have a channel but no client channel. that means we
+        // should make one
+        this._state = ReadyState.ESTABLISHING_CLIENT_CHANNEL
+      }
     }
   }
 
   async disconnect () {
+    this._state = ReadyState.BLOCKED
     this._store.unload(BALANCE(this._account))
     this._store.unload(INCOMING_CLAIM(this._account))
     this._store.unload(CHANNEL(this._account))
@@ -151,7 +211,8 @@ export default class Account {
   }
 
   isBlocked () {
-    return this._store.get(IS_BLOCKED(this._account)) === 'true'
+    return this._state === ReadyState.BLOCKED ||
+      this._store.get(IS_BLOCKED(this._account)) === 'true'
   }
 
   getClientChannel () {
@@ -170,10 +231,30 @@ export default class Account {
     return this._store.set(INCOMING_CLAIM(this._account), incomingClaim)
   }
 
+  prepareChannel () {
+    this._assertState(ReadyState.ESTABLISHING_CHANNEL)
+    this._state = ReadyState.PREPARING_CHANNEL
+  }
+
+  resetChannel () {
+    this._assertState(ReadyState.PREPARING_CHANNEL)
+    this._state = ReadyState.ESTABLISHING_CHANNEL
+  }
+
   setChannel (channel: string, paychan: Paychan) {
+    this._assertState(ReadyState.PREPARING_CHANNEL)
     this._paychan = paychan
     this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
-    return this._store.set(CHANNEL(this._account), channel)
+    this._store.set(CHANNEL(this._account), channel)
+
+    this._state = ReadyState.LOADING_CLIENT_CHANNEL
+    return this.connectClientChannel()
+  }
+
+  reloadChannel (channel: string, paychan: Paychan) {
+    this._assertState(ReadyState.READY)
+    this._paychan = paychan
+    this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
   }
 
   deleteChannel () {
@@ -201,12 +282,47 @@ export default class Account {
     return this._store.set(IS_BLOCKED(this._account), String(isBlocked))
   }
 
-  async setClientChannel (clientChannel: string) {
-    this._clientPaychan = await this._api.getPaymentChannel(clientChannel) as Paychan
-    return this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
+  prepareClientChannel () {
+    this._assertState(ReadyState.ESTABLISHING_CLIENT_CHANNEL)
+    this._state = ReadyState.PREPARING_CLIENT_CHANNEL
+  }
+
+  resetClientChannel () {
+    this._assertState(ReadyState.PREPARING_CLIENT_CHANNEL)
+    this._state = ReadyState.ESTABLISHING_CLIENT_CHANNEL
+  }
+
+  setClientChannel (clientChannel: string, clientPaychan: Paychan) {
+    this._assertState(ReadyState.ESTABLISHING_CLIENT_CHANNEL)
+
+    this._clientPaychan = clientPaychan
+    this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
+    this._state = ReadyState.READY
+  }
+
+  reloadClientChannel (clientChannel: string, clientPaychan: Paychan) {
+    this._assertState(ReadyState.READY)
+    this._clientPaychan = clientPaychan
+    this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
   }
 
   setOutgoingBalance (outgoingBalance: string) {
     return this._store.set(OUTGOING_BALANCE(this._account), outgoingBalance)
+  }
+
+  isReady () {
+    return this._state === ReadyState.READY
+  }
+
+  getState () {
+    return this._state
+  }
+
+  _assertState (state) {
+    if (this._state !== state) {
+      throw new Error(`account must be in state ${state}.` +
+        ' state=' + this.getState() +
+        ' account=' + this.getAccount())
+    }
   }
 }
