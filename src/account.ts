@@ -39,7 +39,7 @@ export enum ReadyState {
   BLOCKED = 8
 }
 
-export default class Account {
+export class Account {
   private _store: StoreWrapper
   private _account: string
   private _api: RippleAPI // TODO: rippleAPI type?
@@ -59,7 +59,7 @@ export default class Account {
     this._currencyScale = opts.currencyScale
     this._funding = false
     this._log = opts.log
-    this._state = ReadyState.LOADING_STORE
+    this._state = ReadyState.INITIAL
   }
 
   xrpToBase (amount: BigNumber.Value): string {
@@ -104,7 +104,7 @@ export default class Account {
     this._funding = funding
   }
 
-  async connect () {
+  async connect (): Promise<void> {
     this._assertState(ReadyState.INITIAL)
 
     await Promise.all([
@@ -117,11 +117,16 @@ export default class Account {
       this._store.load(LAST_CLAIMED(this._account))
     ])
 
+    if (this._store.get(IS_BLOCKED(this._account)) === 'true') {
+      this._state = ReadyState.BLOCKED
+      return
+    }
+
     this._state = ReadyState.LOADING_CHANNEL
-    return this.connectChannel()
+    return this._connectChannel()
   }
 
-  async connectChannel () {
+  async _connectChannel (): Promise<void> {
     this._assertState(ReadyState.LOADING_CHANNEL)
 
     const channelId = this.getChannel()
@@ -132,7 +137,7 @@ export default class Account {
         this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
 
         this._state = ReadyState.LOADING_CLIENT_CHANNEL
-        return this._loadClientChannel
+        return this._connectClientChannel()
       } catch (e) {
         this._log.error('failed to load channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
@@ -144,7 +149,7 @@ export default class Account {
           // TODO: should this apply for all other errors too?
           this._log.error('timed out loading channel. retrying. account=' + this.getAccount())
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
-          return this.connectChannel()
+          return this._connectChannel()
         }
       }
     } else {
@@ -152,13 +157,13 @@ export default class Account {
     }
   }
 
-  async connectClientChannel () {
+  async _connectClientChannel (): Promise<void> {
     this._assertState(ReadyState.LOADING_CLIENT_CHANNEL)
 
     const clientChannelId = this.getClientChannel()
     if (clientChannelId) {
       try {
-        this._clientPaychan = await this._api.getPaymentChannel(clientChannelId)
+        this._clientPaychan = await this._api.getPaymentChannel(clientChannelId) as Paychan
       } catch (e) {
         this._log.error('failed to load client channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
@@ -168,15 +173,13 @@ export default class Account {
         } else if (e.name === 'TimeoutError') {
           this._log.error('timed out loading client channel. retrying. account=' + this.getAccount())
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
-          return this.connectClientChannel()
+          return this._connectClientChannel()
         }
       }
     } else {
-      if (this._state === ReadyState.LOADING_NETWORK) {
-        // in this scenario we have a channel but no client channel. that means we
-        // should make one
-        this._state = ReadyState.ESTABLISHING_CLIENT_CHANNEL
-      }
+      // in this scenario we have a channel but no client channel. that means we
+      // should make one
+      this._state = ReadyState.ESTABLISHING_CLIENT_CHANNEL
     }
   }
 
@@ -206,8 +209,13 @@ export default class Account {
     }
   }
 
-  getChannel () {
-    return this._store.get(CHANNEL(this._account))
+  getChannel (): string {
+    const channel = this._store.get(CHANNEL(this._account))
+    if (!channel) {
+      throw new Error('channel does not exist on this account')
+    }
+
+    return channel
   }
 
   isBlocked () {
@@ -216,7 +224,12 @@ export default class Account {
   }
 
   getClientChannel () {
-    return this._store.get(CLIENT_CHANNEL(this._account))
+    const clientChannel = this._store.get(CLIENT_CHANNEL(this._account))
+    if (!clientChannel) {
+      throw new Error('clientChannel does not exist on this account')
+    }
+
+    return clientChannel
   }
 
   getOutgoingBalance () {
@@ -248,7 +261,7 @@ export default class Account {
     this._store.set(CHANNEL(this._account), channel)
 
     this._state = ReadyState.LOADING_CLIENT_CHANNEL
-    return this.connectClientChannel()
+    return this._connectClientChannel()
   }
 
   reloadChannel (channel: string, paychan: Paychan) {
@@ -279,6 +292,9 @@ export default class Account {
   }
 
   block (isBlocked = true) {
+    if (isBlocked) {
+      this._state = ReadyState.BLOCKED
+    }
     return this._store.set(IS_BLOCKED(this._account), String(isBlocked))
   }
 
@@ -318,7 +334,7 @@ export default class Account {
     return this._state
   }
 
-  _assertState (state) {
+  _assertState (state: ReadyState) {
     if (this._state !== state) {
       throw new Error(`account must be in state ${state}.` +
         ' state=' + this.getState() +

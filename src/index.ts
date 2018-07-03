@@ -9,7 +9,7 @@ import { RippleAPI } from 'ripple-lib'
 import BigNumber from 'bignumber.js'
 import * as ILDCP from 'ilp-protocol-ildcp'
 import StoreWrapper from './store-wrapper'
-import Account from './account'
+import { Account, ReadyState } from './account'
 
 import {
   Protocol,
@@ -46,6 +46,14 @@ function ilpAddressToAccount (prefix: string, ilpAddress: string) {
   }
 
   return ilpAddress.substr(prefix.length).split('.')[0]
+}
+
+export interface ExtraInfo {
+  address: string
+  account: string
+  currencyScale: number
+  channel?: string
+  clientChannel?: string
 }
 
 export interface IlpPluginAsymServerOpts {
@@ -142,7 +150,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   sendTransfer () {
-    debug('send transfer no-op')
+    this._log.debug('send transfer no-op')
   }
 
   _validatePaychanDetails (paychan: Paychan) {
@@ -189,13 +197,21 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   _extraInfo (account: Account) {
-    return {
-      channel: account.getChannel(),
-      clientChannel: account.getClientChannel(),
+    const info: ExtraInfo = {
       address: this._address,
       account: this._prefix + account.getAccount(),
       currencyScale: this._currencyScale
     }
+
+    if (account.getState() > ReadyState.PREPARING_CHANNEL) {
+      info.channel = account.getChannel()
+    }
+
+    if (account.isReady()) {
+      info.clientChannel = account.getClientChannel()
+    }
+
+    return info
   }
 
   async _channelClaim (account: Account, close: boolean = false) {
@@ -269,23 +285,35 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   async _connect (address: string, btpData: BtpData) {
     const { requestId, data } = btpData
     const account = this._getAccount(address)
-    await account.connect()
 
-    const existingChannel = account.getChannel()
-    if (existingChannel) {
+    if (account.getState() === ReadyState.INITIAL) {
+      await account.connect()
+    }
+
+    if (account.isBlocked()) {
+      throw new Error('cannot connect to blocked account. ' +
+        'reconfigure your uplink to connect with a new payment channel.')
+    }
+
+    if (account.getState() > ReadyState.PREPARING_CHANNEL) {
       try {
         this._validatePaychanDetails(account.getPaychan())
-        this._channelToAccount.set(existingChannel, account)
+        this._channelToAccount.set(account.getChannel(), account)
+        await this._watcher.watch(account.getChannel())
         await this._registerAutoClaim(account)
       } catch (e) {
-        this._log.debug('deleting channel because of failed validate. error=', e)
+        this._log.debug('deleting channel because of failed validate.' +
+          ' account=' + account.getAccount() +
+          ' channel=' + account.getChannel() +
+          ' error=', e)
         try {
           await this._channelClaim(account)
           account.deleteChannel()
         } catch (err) {
           this._log.error('could not delete channel. error=', err)
-          // should the account be blocked?
         }
+        this._log.trace('blocking account. account=' + account.getAccount())
+        account.block()
       }
     }
 
@@ -293,7 +321,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   async _fundOutgoingChannel (account: Account, primary: Protocol) {
-    if (account.getClientChannel()) {
+    if (account.getState() !== ReadyState.ESTABLISHING_CLIENT_CHANNEL) {
       this._log.warn('outgoing channel already exists')
       return account.getClientPaychan()
     }
@@ -329,7 +357,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       this._log.trace('created outgoing channel. channel=', clientChannelId)
       account.setOutgoingBalance('0')
 
-      clientPaychan = await this._api.getPaymentChannel(clientChannelId)
+      clientPaychan = await this._api.getPaymentChannel(clientChannelId) as Paychan
     } catch (e) {
       // relinquish lock on the client channel field
       account.resetClientChannel()
@@ -345,13 +373,14 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const protocols = message.data.protocolData
     if (!protocols.length) return undefined
 
-    const getLastClaim = protocols.filter((p: Protocol) => p.protocolName === 'last_claim')[0]
-    const fundChannel = protocols.filter((p: Protocol) => p.protocolName === 'fund_channel')[0]
-    const channelProtocol = protocols.filter((p: Protocol) => p.protocolName === 'channel')[0]
-    const channelSignatureProtocol = protocols.filter((p: Protocol) => p.protocolName === 'channel_signature')[0]
-    const ilp = protocols.filter((p: Protocol) => p.protocolName === 'ilp')[0]
-    const info = protocols.filter((p: Protocol) => p.protocolName === 'info')[0]
+    const getLastClaim = protocols.find((p: Protocol) => p.protocolName === 'last_claim')
+    const fundChannel = protocols.find((p: Protocol) => p.protocolName === 'fund_channel')
+    const channelProtocol = protocols.find((p: Protocol) => p.protocolName === 'channel')
+    const channelSignatureProtocol = protocols.find((p: Protocol) => p.protocolName === 'channel_signature')
+    const ilp = protocols.find((p: Protocol) => p.protocolName === 'ilp')
+    const info = protocols.find((p: Protocol) => p.protocolName === 'info')
 
+    // TODO: STATE ASSERTION HERE
     if (getLastClaim) {
       this._log.trace('got request for last claim. claim=', account.getIncomingClaim())
       return [{
@@ -361,6 +390,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       }]
     }
 
+    // TODO: STATE ASSERTION HERE
     if (info) {
       this._log.trace('got info request')
       return [{
@@ -371,6 +401,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     if (channelProtocol) {
+      if (!account.isReady() && account.getState() !== ReadyState.ESTABLISHING_CHANNEL) {
+        throw new Error('channel protocol can only be used in READY and ESTABLISHING_CHANNEL states.' +
+          ' state=' + account.getState())
+      }
+
       this._log.trace('got message for incoming channel. account=', account.getAccount())
       const channel = channelProtocol.data
         .toString('hex')
@@ -380,14 +415,13 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         throw new Error(`got channel without signature of channel ownership.`)
       }
 
-      const existingChannel = account.getChannel()
-      if (existingChannel) {
-        if (existingChannel !== channel) {
+      if (account.getState() > ReadyState.PREPARING_CHANNEL) {
+        if (account.getChannel() !== channel) {
           throw new Error(`there is already an existing channel on this account
             and it doesn't match the 'channel' protocolData`)
         } else {
           // if we already have a channel, that means we should just reload the details
-          const paychan = await this._api.getPaymentChannel(channel)
+          const paychan = await this._api.getPaymentChannel(channel) as Paychan
           account.reloadChannel(channel, paychan)
           return
         }
@@ -444,6 +478,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     if (fundChannel) {
+      if (account.getState() !== ReadyState.ESTABLISHING_CLIENT_CHANNEL) {
+        throw new Error('fund protocol can only be used in ESTABLISHING_CLIENT_CHANNEL state.' +
+          ' state=' + account.getState())
+      }
+
       if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(MIN_INCOMING_CHANNEL)) {
         this._log.debug('denied outgoing paychan request; not enough has been escrowed')
         throw new Error('not enough has been escrowed in channel; must put ' +
@@ -572,12 +611,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   _handleIncomingPrepare (account: Account, ilpData: Buffer) {
     const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
 
-    if (!account.getPaychan()) {
-      throw new Errors.UnreachableError(`Incoming traffic won't be accepted until a channel to the connector is established.`)
-    }
-
-    if (account.isBlocked()) {
-      throw new Errors.UnreachableError('This account has been closed.')
+    if (!account.isReady()) {
+      throw new Error('ilp packets will only be forwarded in READY state.' +
+        ' state=' + account.getState())
     }
 
     if (this._maxPacketAmount.isLessThan(amount)) {
@@ -621,7 +657,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   }
 
   _sendPrepare (destination: string, parsedPacket: IlpPacket.IlpPacket) {
-    // TODO: do we need anything here?
+    const account = this._getAccount(destination)
+    if (!account.isReady()) {
+      throw new Error('account must be in READY state to receive packets.' +
+        ' state=' + account.getState())
+    }
   }
 
   _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: IlpPacket.IlpPacket) {
@@ -672,7 +712,13 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   _sendMoneyToAccount (transferAmount: string, to: string) {
     const account = this._getAccount(to)
-    // TODO: do we need to connect this account?
+    if (!account.isReady()) {
+      this._log.error('tried to send settlement to account which is not connected.' +
+        ' account=' + account.getAccount() +
+        ' state=' + account.getState() +
+        ' transferAmount=' + transferAmount)
+      throw new Error('account is not initialized. account=' + account.getAccount())
+    }
 
     const currentBalance = account.getOutgoingBalance()
     const newBalance = currentBalance.plus(transferAmount)
@@ -719,7 +765,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       })
         .then(async () => {
           // reload channel details for the channel we just added funds to
-          const clientPaychan = await this._api.getPaymentChannel(channel)
+          const clientPaychan = await this._api.getPaymentChannel(clientChannel) as Paychan
           await account.reloadClientChannel(clientChannel, clientPaychan)
 
           account.setFunding(false)
@@ -806,6 +852,14 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   _handleMoney (from: string, btpData: BtpData) {
     const account = this._getAccount(from)
+    if (account.getState() < ReadyState.LOADING_CLIENT_CHANNEL) {
+      this._log.error('got claim from account which is not fully connected.' +
+        ' account=' + account.getAccount() +
+        ' state=' + account.getState())
+      throw new Error('account is not initialized; claim cannot be accepted.' +
+        ' account=' + account.getAccount())
+    }
+
     this._log.trace('handling money. account=' + account.getAccount())
 
     // TODO: match the transfer amount
