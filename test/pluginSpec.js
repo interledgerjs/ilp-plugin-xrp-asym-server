@@ -266,8 +266,8 @@ describe('pluginSpec', () => {
       await this.plugin._connect(this.from, {})
       assert.isTrue(stub.calledWith(this.channelId))
       assert.isNotOk(this.plugin._channelToAccount.get(this.channelId))
-      assert.isNotOk(this.plugin._store.getString(this.account + ':channel'))
-      assert.isNotOk(this.plugin._store.getString(this.account + ':last_claimed'))
+      assert.isNotOk(this.plugin._store.get(this.account + ':channel'))
+      assert.isNotOk(this.plugin._store.get(this.account + ':last_claimed'))
     })
   })
 

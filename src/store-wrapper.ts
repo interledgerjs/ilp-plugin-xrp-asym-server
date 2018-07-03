@@ -11,7 +11,7 @@ export default class StoreWrapper {
     this._write = Promise.resolve()
   }
 
-  async loadString (key: string) { return this._load(key, false) }
+  async load (key: string) { return this._load(key, false) }
   async loadObject (key: string) { return this._load(key, true) }
 
   private async _load (key: string, parse: boolean) {
@@ -31,10 +31,10 @@ export default class StoreWrapper {
     }
   }
 
-  getString (key: string): string | void {
+  get (key: string): string | void {
     const val = this._cache.get(key)
     if (val === undefined || typeof val === 'string') return val
-    throw new Error('StoreWrapper#getString: unexpected type for key=' + key)
+    throw new Error('StoreWrapper#get: unexpected type for key=' + key)
   }
 
   getObject (key: string): object | void {

@@ -380,8 +380,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       const paychan = await this._api.getPaymentChannel(channel)
 
       // TODO: factor reverse-channel lookup into other class?
-      await this._store.loadString('channel:' + channel)
-      const accountForChannel = this._store.getString('channel:' + channel)
+      await this._store.load('channel:' + channel)
+      const accountForChannel = this._store.get('channel:' + channel)
       if (accountForChannel && account.getAccount() !== accountForChannel) {
         throw new Error(`this channel has already been associated with a ` +
           `different account. account=${account.getAccount()} associated=${accountForChannel}`)
