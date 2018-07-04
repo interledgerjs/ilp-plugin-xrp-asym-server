@@ -364,7 +364,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       throw e
     }
 
-    await account.setClientChannel(clientChannelId, clientPaychan)
+    account.setClientChannel(clientChannelId, clientPaychan)
     return clientChannelId
   }
 
@@ -390,7 +390,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       }]
     }
 
-    // TODO: STATE ASSERTION HERE
     if (info) {
       this._log.trace('got info request')
       return [{
@@ -401,6 +400,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     if (channelProtocol) {
+      // TODO: should this be allowed so long as the channel exists already or is being established?
       if (!account.isReady() && account.getState() !== ReadyState.ESTABLISHING_CHANNEL) {
         throw new Error('channel protocol can only be used in READY and ESTABLISHING_CHANNEL states.' +
           ' state=' + account.getStateString())
@@ -457,7 +457,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           throw new Error(`invalid signature for proving channel ownership. ` +
             `account=${account.getAccount()} channelId=${channel}`)
         }
-      
+
         // TODO: fix the ripple-lib FormattedPaymentChannel type to be compatible
         this._validatePaychanDetails(paychan as Paychan)
       } catch (e) {
@@ -470,7 +470,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
       this._channelToAccount.set(channel, account)
       this._store.set('channel:' + channel, account.getAccount())
-      account.setChannel(channel, paychan as Paychan)
+      await account.setChannel(channel, paychan as Paychan)
 
       await this._watcher.watch(channel)
       await this._registerAutoClaim(account)
@@ -612,7 +612,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const { amount } = IlpPacket.deserializeIlpPrepare(ilpData)
 
     if (!account.isReady()) {
-      throw new Error('ilp packets will only be forwarded in READY state.' +
+      throw new Errors.UnreachableError('ilp packets will only be forwarded in READY state.' +
         ' state=' + account.getStateString())
     }
 
@@ -659,7 +659,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   _sendPrepare (destination: string, parsedPacket: IlpPacket.IlpPacket) {
     const account = this._getAccount(destination)
     if (!account.isReady()) {
-      throw new Error('account must be in READY state to receive packets.' +
+      throw new Errors.UnreachableError('account must be in READY state to receive packets.' +
         ' state=' + account.getStateString())
     }
   }
@@ -766,7 +766,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         .then(async () => {
           // reload channel details for the channel we just added funds to
           const clientPaychan = await this._api.getPaymentChannel(clientChannel) as Paychan
-          await account.reloadClientChannel(clientChannel, clientPaychan)
+          account.reloadClientChannel(clientChannel, clientPaychan)
 
           account.setFunding(false)
           this._log.trace('completed fund tx. account=', account.getAccount())
