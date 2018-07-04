@@ -15,6 +15,7 @@ const EventEmitter = require('events')
 
 const PluginXrpAsymServer = require('..')
 const Store = require('./util/memStore')
+const { ReadyState } = require('../src/account')
 const {
   util
 } = require('ilp-plugin-xrp-paychan-shared')
@@ -135,7 +136,6 @@ describe('pluginSpec', () => {
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
       this.plugin._channelToAccount.set(this.channelId, this.account)
-      await this.account.setClientChannel(this.channelId)
       this.paychan = {
         account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
         amount: '1',
@@ -147,7 +147,10 @@ describe('pluginSpec', () => {
         previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
         previousAffectingTransactionLedgerVersion: 6089142
       }
+      this.account._state = ReadyState.PREPARING_CHANNEL
       this.account.setChannel(this.channelId, this.paychan)
+      this.account._state = ReadyState.PREPARING_CLIENT_CHANNEL
+      await this.account.setClientChannel(this.channelId, {})
       this.account.setIncomingClaim({
         amount: 1000,
         signature: 'foo'
@@ -180,6 +183,23 @@ describe('pluginSpec', () => {
       beforeEach(async function () {
         this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
         this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+        this.account = await this.plugin._getAccount(this.from)
+        this.plugin._channelToAccount.set(this.channelId, this.account)
+        this.paychan = {
+          account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+          amount: '1',
+          balance: '0',
+          destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+          publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+          settleDelay: 3600,
+          sourceTag: 1280434065,
+          previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+          previousAffectingTransactionLedgerVersion: 6089142
+        }
+        this.account._state = ReadyState.PREPARING_CHANNEL
+        this.account.setChannel(this.channelId, this.paychan)
+        this.plugin._channelToAccount.set(this.channelId, this.account)
+        this.account._state = ReadyState.READY
         this.channelSig = '9F878049FBBF4CEBAB29E6D840984D777C10ECE0FB96B0A56FF2CBC90D38DD03571A7D95A7721173970D39E1FC8AE694D777F5363AA37950D91F9B4B7E179C00'
         this.channelProtocol = {
           data: {
@@ -195,6 +215,8 @@ describe('pluginSpec', () => {
       })
 
       it('does not race when assigning a channel to an account', async function () {
+        this.account._state = ReadyState.ESTABLISHING_CHANNEL
+
         const getStub = this.sinon.stub(this.plugin._store._store, 'get')
         getStub.withArgs('channel:' + this.channelId).onFirstCall().callsFake(() => {
           // simulate another process writing to the cache while we wait for the store to return
@@ -263,7 +285,7 @@ describe('pluginSpec', () => {
         throw error
       })
 
-      await this.plugin._connect(this.from, {})
+      await assert.isRejected(this.plugin._connect(this.from, {}))
       assert.isTrue(stub.calledWith(this.channelId))
       assert.isNotOk(this.plugin._channelToAccount.get(this.channelId))
       assert.isNotOk(this.plugin._store.get(this.account + ':channel'))
@@ -283,6 +305,8 @@ describe('pluginSpec', () => {
       assert.equal(info.channel, undefined)
 
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
+      this.account._state = ReadyState.LOADING_CLIENT_CHANNEL
+
       const info2 = this.plugin._extraInfo(this.account)
       assert.equal(info2.channel, this.channelId)
     })
@@ -291,7 +315,10 @@ describe('pluginSpec', () => {
       const info = this.plugin._extraInfo(this.account)
       assert.equal(info.clientChannel, undefined)
 
+      this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':client_channel', this.channelId)
+      this.account._state = ReadyState.READY
+
       const info2 = this.plugin._extraInfo(this.account)
       assert.equal(info2.clientChannel, this.channelId)
     })
@@ -307,6 +334,7 @@ describe('pluginSpec', () => {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
@@ -378,6 +406,7 @@ describe('pluginSpec', () => {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
@@ -477,6 +506,7 @@ describe('pluginSpec', () => {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':client_channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':claim', {
@@ -622,6 +652,7 @@ describe('pluginSpec', () => {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',
@@ -728,6 +759,7 @@ describe('pluginSpec', () => {
 
     it('should return a reject if there is no channel to peer', async function () {
       delete this.account._paychan
+      this.account._state = ReadyState.LOADING_CHANNEL
 
       const res = await this.plugin._handleCustomData(this.from, this.prepare)
 
@@ -738,7 +770,7 @@ describe('pluginSpec', () => {
       assert.deepEqual(parsed, {
         code: 'F02',
         triggeredBy: 'test.example.',
-        message: 'Incoming traffic won\'t be accepted until a channel to the connector is established.',
+        message: 'ilp packets will only be forwarded in READY state. state=LOADING_CHANNEL',
         data: Buffer.alloc(0)
       })
     })
@@ -749,6 +781,7 @@ describe('pluginSpec', () => {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':last_claimed', '12300')
       this.plugin._store.setCache(this.account.getAccount() + ':claim', {
@@ -817,6 +850,7 @@ describe('pluginSpec', () => {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
       this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
       this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
       this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
       this.plugin._store.setCache(this.account.getAccount() + ':claim', {
         amount: '12345',

@@ -143,7 +143,7 @@ export class Account {
   async _connectChannel (): Promise<void> {
     this._assertState(ReadyState.LOADING_CHANNEL)
 
-    const channelId = this.getChannel()
+    const channelId = this._store.get(CHANNEL(this._account))
     if (channelId) {
       try {
         const paychan = await this._api.getPaymentChannel(channelId) as Paychan
@@ -174,7 +174,7 @@ export class Account {
   async _connectClientChannel (): Promise<void> {
     this._assertState(ReadyState.LOADING_CLIENT_CHANNEL)
 
-    const clientChannelId = this.getClientChannel()
+    const clientChannelId = this._store.get(CLIENT_CHANNEL(this._account))
     if (clientChannelId) {
       try {
         this._clientPaychan = await this._api.getPaymentChannel(clientChannelId) as Paychan
@@ -268,7 +268,7 @@ export class Account {
     this._state = ReadyState.ESTABLISHING_CHANNEL
   }
 
-  setChannel (channel: string, paychan: Paychan) {
+  async setChannel (channel: string, paychan: Paychan) {
     this._assertState(ReadyState.PREPARING_CHANNEL)
     this._paychan = paychan
     this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
@@ -323,7 +323,7 @@ export class Account {
   }
 
   setClientChannel (clientChannel: string, clientPaychan: Paychan) {
-    this._assertState(ReadyState.ESTABLISHING_CLIENT_CHANNEL)
+    this._assertState(ReadyState.PREPARING_CLIENT_CHANNEL)
 
     this._clientPaychan = clientPaychan
     this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
