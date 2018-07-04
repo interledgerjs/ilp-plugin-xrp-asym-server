@@ -39,6 +39,20 @@ export enum ReadyState {
   BLOCKED = 8
 }
 
+function stateToString (state: ReadyState): string {
+  switch (state) {
+    case ReadyState.INITIAL: return 'INITIAL'
+    case ReadyState.LOADING_CHANNEL: return 'LOADING_CHANNEL'
+    case ReadyState.ESTABLISHING_CHANNEL: return 'ESTABLISHING_CHANNEL'
+    case ReadyState.PREPARING_CHANNEL: return 'PREPARING_CHANNEL'
+    case ReadyState.LOADING_CLIENT_CHANNEL: return 'LOADING_CLIENT_CHANNEL'
+    case ReadyState.ESTABLISHING_CLIENT_CHANNEL: return 'ESTABLISHING_CLIENT_CHANNEL'
+    case ReadyState.PREPARING_CLIENT_CHANNEL: return 'PREPARING_CLIENT_CHANNEL'
+    case ReadyState.READY: return 'READY'
+    case ReadyState.BLOCKED: return 'BLOCKED'
+  }
+}
+
 export class Account {
   private _store: StoreWrapper
   private _account: string
@@ -334,10 +348,14 @@ export class Account {
     return this._state
   }
 
+  getStateString () {
+    return stateToString(this._state)
+  }
+
   _assertState (state: ReadyState) {
     if (this._state !== state) {
-      throw new Error(`account must be in state ${state}.` +
-        ' state=' + this.getState() +
+      throw new Error(`account must be in state ${stateToString(state)}.` +
+        ' state=' + this.getStateString() +
         ' account=' + this.getAccount())
     }
   }

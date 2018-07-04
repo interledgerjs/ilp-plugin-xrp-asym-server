@@ -403,7 +403,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     if (channelProtocol) {
       if (!account.isReady() && account.getState() !== ReadyState.ESTABLISHING_CHANNEL) {
         throw new Error('channel protocol can only be used in READY and ESTABLISHING_CHANNEL states.' +
-          ' state=' + account.getState())
+          ' state=' + account.getStateString())
       }
 
       this._log.trace('got message for incoming channel. account=', account.getAccount())
@@ -480,7 +480,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     if (fundChannel) {
       if (account.getState() !== ReadyState.ESTABLISHING_CLIENT_CHANNEL) {
         throw new Error('fund protocol can only be used in ESTABLISHING_CLIENT_CHANNEL state.' +
-          ' state=' + account.getState())
+          ' state=' + account.getStateString())
       }
 
       if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(MIN_INCOMING_CHANNEL)) {
@@ -613,7 +613,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     if (!account.isReady()) {
       throw new Error('ilp packets will only be forwarded in READY state.' +
-        ' state=' + account.getState())
+        ' state=' + account.getStateString())
     }
 
     if (this._maxPacketAmount.isLessThan(amount)) {
@@ -660,7 +660,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const account = this._getAccount(destination)
     if (!account.isReady()) {
       throw new Error('account must be in READY state to receive packets.' +
-        ' state=' + account.getState())
+        ' state=' + account.getStateString())
     }
   }
 
@@ -715,7 +715,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     if (!account.isReady()) {
       this._log.error('tried to send settlement to account which is not connected.' +
         ' account=' + account.getAccount() +
-        ' state=' + account.getState() +
+        ' state=' + account.getStateString() +
         ' transferAmount=' + transferAmount)
       throw new Error('account is not initialized. account=' + account.getAccount())
     }
@@ -855,7 +855,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     if (account.getState() < ReadyState.LOADING_CLIENT_CHANNEL) {
       this._log.error('got claim from account which is not fully connected.' +
         ' account=' + account.getAccount() +
-        ' state=' + account.getState())
+        ' state=' + account.getStateString())
       throw new Error('account is not initialized; claim cannot be accepted.' +
         ' account=' + account.getAccount())
     }
