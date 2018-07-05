@@ -320,10 +320,13 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     return null
   }
 
-  async _fundOutgoingChannel (account: Account, primary: Protocol) {
-    if (account.getState() !== ReadyState.ESTABLISHING_CLIENT_CHANNEL) {
+  async _fundOutgoingChannel (account: Account, primary: Protocol): Promise<string> {
+    if (account.getState() === ReadyState.READY) {
       this._log.warn('outgoing channel already exists')
-      return account.getClientPaychan()
+      return account.getClientChannel()
+    } else if (account.getState() !== ReadyState.ESTABLISHING_CLIENT_CHANNEL) {
+      throw new Error('account must be in ESTABLISHING_CLIENT_CHANNEL state to create client channel.' +
+        ' state=' + account.getStateString())
     }
 
     // lock the account's client channel field so a second call to this won't
@@ -423,58 +426,58 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           // if we already have a channel, that means we should just reload the details
           const paychan = await this._api.getPaymentChannel(channel) as Paychan
           account.reloadChannel(channel, paychan)
-          return
+          // don't return here because the fund_channel protocol may still need to be processed
         }
+      } else {
+        // lock to make sure we don't have this going two times
+        account.prepareChannel()
+
+        let paychan
+
+        try {
+          // Because this reloads channel details even if the channel exists,
+          // we can use it to refresh the channel details after extra funds are
+          // added
+          paychan = await this._api.getPaymentChannel(channel) as Paychan
+
+          // TODO: factor reverse-channel lookup into other class?
+          await this._store.load('channel:' + channel)
+          const accountForChannel = this._store.get('channel:' + channel)
+          if (accountForChannel && account.getAccount() !== accountForChannel) {
+            throw new Error(`this channel has already been associated with a ` +
+              `different account. account=${account.getAccount()} associated=${accountForChannel}`)
+          }
+
+          const fullAccount = this._prefix + account.getAccount()
+          const encodedChannelProof = util.encodeChannelProof(channel, fullAccount)
+          const isValid = nacl.sign.detached.verify(
+            encodedChannelProof,
+            channelSignatureProtocol.data,
+            Buffer.from(paychan.publicKey.substring(2), 'hex')
+          )
+          if (!isValid) {
+            throw new Error(`invalid signature for proving channel ownership. ` +
+              `account=${account.getAccount()} channelId=${channel}`)
+          }
+
+          // TODO: fix the ripple-lib FormattedPaymentChannel type to be compatible
+          this._validatePaychanDetails(paychan)
+        } catch (e) {
+
+          // if we failed to load or validate the channel, then we need to reset the state
+          // of this account to 'ESTABLISHING_CHANNEL'
+          account.resetChannel()
+          throw e
+        }
+
+        this._channelToAccount.set(channel, account)
+        this._store.set('channel:' + channel, account.getAccount())
+        await account.setChannel(channel, paychan)
+
+        await this._watcher.watch(channel)
+        await this._registerAutoClaim(account)
+        this._log.trace('registered payment channel. account=', account.getAccount())
       }
-
-      // lock to make sure we don't have this going two times
-      account.prepareChannel()
-
-      let paychan
-
-      try {
-        // Because this reloads channel details even if the channel exists,
-        // we can use it to refresh the channel details after extra funds are
-        // added
-        paychan = await this._api.getPaymentChannel(channel)
-
-        // TODO: factor reverse-channel lookup into other class?
-        await this._store.load('channel:' + channel)
-        const accountForChannel = this._store.get('channel:' + channel)
-        if (accountForChannel && account.getAccount() !== accountForChannel) {
-          throw new Error(`this channel has already been associated with a ` +
-            `different account. account=${account.getAccount()} associated=${accountForChannel}`)
-        }
-
-        const fullAccount = this._prefix + account.getAccount()
-        const encodedChannelProof = util.encodeChannelProof(channel, fullAccount)
-        const isValid = nacl.sign.detached.verify(
-          encodedChannelProof,
-          channelSignatureProtocol.data,
-          Buffer.from(paychan.publicKey.substring(2), 'hex')
-        )
-        if (!isValid) {
-          throw new Error(`invalid signature for proving channel ownership. ` +
-            `account=${account.getAccount()} channelId=${channel}`)
-        }
-
-        // TODO: fix the ripple-lib FormattedPaymentChannel type to be compatible
-        this._validatePaychanDetails(paychan as Paychan)
-      } catch (e) {
-
-        // if we failed to load or validate the channel, then we need to reset the state
-        // of this account to 'ESTABLISHING_CHANNEL'
-        account.resetChannel()
-        throw e
-      }
-
-      this._channelToAccount.set(channel, account)
-      this._store.set('channel:' + channel, account.getAccount())
-      await account.setChannel(channel, paychan as Paychan)
-
-      await this._watcher.watch(channel)
-      await this._registerAutoClaim(account)
-      this._log.trace('registered payment channel. account=', account.getAccount())
     }
 
     if (fundChannel) {
@@ -883,8 +886,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   async _disconnect () {
     this._log.info('disconnecting accounts and api')
     for (const account of this._accounts.values()) {
-      const interval = account.getClaimIntervalId()
-      if (interval) clearInterval(interval)
+      account.disconnect()
     }
     this._api.connection.removeAllListeners()
     await this._api.disconnect()
