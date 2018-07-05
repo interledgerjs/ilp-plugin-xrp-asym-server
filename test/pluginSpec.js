@@ -148,7 +148,7 @@ describe('pluginSpec', () => {
         previousAffectingTransactionLedgerVersion: 6089142
       }
       this.account._state = ReadyState.PREPARING_CHANNEL
-      this.account.setChannel(this.channelId, this.paychan)
+      await this.account.setChannel(this.channelId, this.paychan)
       this.account._state = ReadyState.PREPARING_CLIENT_CHANNEL
       await this.account.setClientChannel(this.channelId, {})
       this.account.setIncomingClaim({
@@ -197,7 +197,7 @@ describe('pluginSpec', () => {
           previousAffectingTransactionLedgerVersion: 6089142
         }
         this.account._state = ReadyState.PREPARING_CHANNEL
-        this.account.setChannel(this.channelId, this.paychan)
+        await this.account.setChannel(this.channelId, this.paychan)
         this.plugin._channelToAccount.set(this.channelId, this.account)
         this.account._state = ReadyState.READY
         this.channelSig = '9F878049FBBF4CEBAB29E6D840984D777C10ECE0FB96B0A56FF2CBC90D38DD03571A7D95A7721173970D39E1FC8AE694D777F5363AA37950D91F9B4B7E179C00'

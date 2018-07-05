@@ -197,7 +197,7 @@ export class Account {
     }
   }
 
-  async disconnect () {
+  disconnect () {
     this._state = ReadyState.BLOCKED
     this._store.unload(BALANCE(this._account))
     this._store.unload(INCOMING_CLAIM(this._account))
@@ -205,6 +205,8 @@ export class Account {
     this._store.unload(IS_BLOCKED(this._account))
     this._store.unload(CLIENT_CHANNEL(this._account))
     this._store.unload(OUTGOING_BALANCE(this._account))
+    const interval = this.getClaimIntervalId()
+    if (interval) clearInterval(interval)
   }
 
   getBalance () {
@@ -279,7 +281,10 @@ export class Account {
   }
 
   reloadChannel (channel: string, paychan: Paychan) {
-    this._assertState(ReadyState.READY)
+    if (this.getState() < ReadyState.LOADING_CLIENT_CHANNEL) {
+      throw new Error('state must be at least LOADING_CLIENT_CHANNEL to reload channel details.' +
+        ' state=' + this.getStateString())
+    }
     this._paychan = paychan
     this.setLastClaimedAmount(this.xrpToBase(paychan.balance))
   }
@@ -352,7 +357,7 @@ export class Account {
     return stateToString(this._state)
   }
 
-  _assertState (state: ReadyState) {
+  private _assertState (state: ReadyState) {
     if (this._state !== state) {
       throw new Error(`account must be in state ${stateToString(state)}.` +
         ' state=' + this.getStateString() +
