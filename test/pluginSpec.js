@@ -973,4 +973,79 @@ describe('pluginSpec', () => {
       assert.isFalse(stub.called)
     })
   })
+
+  describe('Account', function () {
+    beforeEach(function () {
+      this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
+      this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      this.account = this.plugin._getAccount(this.from)
+      this.paychan = {
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      }
+    })
+
+    it('should block the account if the store says so', async function () {
+      this.account._store.setCache(this.account.getAccount() + ':block', 'true')
+      await this.account.connect()
+      assert.equal(this.account.getStateString(), 'BLOCKED')
+    })
+
+    it('should set to ESTABLISHING_CHANNEL if no channel exists', async function () {
+      await this.account.connect()
+      assert.equal(this.account.getStateString(), 'ESTABLISHING_CHANNEL')
+    })
+
+    it('should load channel from ledger if it exists', async function () {
+      this.account._store.setCache(this.account.getAccount() + ':channel', 'my_channel_id')
+      this.sinon.stub(this.account._api, 'getPaymentChannel').resolves(this.paychan)
+      await this.account.connect()
+      assert.equal(this.account.getStateString(), 'ESTABLISHING_CLIENT_CHANNEL')
+    })
+
+    it('should retry call to ledger if channel gives timeout', async function () {
+      this.account._store.setCache(this.account.getAccount() + ':channel', 'my_channel_id')
+      this.sinon.stub(this.account._api, 'getPaymentChannel')
+        .onFirstCall().callsFake(() => {
+          const e = new Error('timed out')
+          e.name = 'TimeoutError'
+          throw e
+        })
+        .onSecondCall().resolves(this.paychan)
+
+      const oldSetTimeout = setTimeout
+      setTimeout = setImmediate
+      await this.account.connect()
+      setTimeout = oldSetTimeout
+
+      assert.equal(this.account.getStateString(), 'ESTABLISHING_CLIENT_CHANNEL')
+    })
+
+    it('should retry call to ledger if client channel gives timeout', async function () {
+      this.account._store.setCache(this.account.getAccount() + ':channel', 'my_channel_id')
+      this.account._store.setCache(this.account.getAccount() + ':client_channel', 'my_channel_id')
+      this.sinon.stub(this.account._api, 'getPaymentChannel')
+        .onCall(0).resolves(this.paychan)
+        .onCall(1).callsFake(() => {
+          const e = new Error('timed out')
+          e.name = 'TimeoutError'
+          throw e
+        })
+        .onCall(2).resolves(this.paychan)
+
+      const oldSetTimeout = setTimeout
+      setTimeout = setImmediate
+      await this.account.connect()
+      setTimeout = oldSetTimeout
+
+      assert.equal(this.account.getStateString(), 'READY')
+    })
+  })
 })

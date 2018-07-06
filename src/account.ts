@@ -178,6 +178,7 @@ export class Account {
     if (clientChannelId) {
       try {
         this._clientPaychan = await this._api.getPaymentChannel(clientChannelId) as Paychan
+        this._state = ReadyState.READY
       } catch (e) {
         this._log.error('failed to load client channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
