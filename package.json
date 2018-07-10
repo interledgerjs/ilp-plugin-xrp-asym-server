@@ -2,9 +2,10 @@
   "name": "ilp-plugin-xrp-asym-server",
   "version": "1.4.6",
   "description": "Asymmetric XRP paychan server for ILP",
-  "main": "src/index.js",
+  "main": "index.js",
   "types": "src/index.d.ts",
   "files": [
+    "index.js",
     "src/**/*.ts",
     "src/**/*.js",
     "src/**/*.js.map",
