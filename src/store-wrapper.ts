@@ -65,4 +65,6 @@ export default class StoreWrapper {
   setCache (key: string, value: string) {
     this._cache.set(key, value)
   }
+
+  close (): Promise<void> { return this._write }
 }

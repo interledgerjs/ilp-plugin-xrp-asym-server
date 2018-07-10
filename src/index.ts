@@ -799,7 +799,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
     this._api.connection.removeAllListeners()
     await this._api.disconnect()
+    await this._store.close()
   }
 }
-
-module.exports = IlpPluginAsymServer
