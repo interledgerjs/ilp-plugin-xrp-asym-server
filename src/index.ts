@@ -269,7 +269,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
 
     // disable the account once the channel is closing
-    account.block()
+    account.block(true, 'channel is closing/closed. channelId=' + channelId)
     await this._channelClaim(account, true)
   }
 
@@ -292,7 +292,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     if (account.isBlocked()) {
       throw new Error('cannot connect to blocked account. ' +
-        'reconfigure your uplink to connect with a new payment channel.')
+        'reconfigure your uplink to connect with a new payment channel.' +
+        ' reason=' + account.getBlockReason())
     }
 
     if (account.getState() > ReadyState.PREPARING_CHANNEL) {
@@ -313,7 +314,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           this._log.error('could not delete channel. error=', err)
         }
         this._log.trace('blocking account. account=' + account.getAccount())
-        account.block()
+        account.block(true, 'failed to validate channel.' +
+          ' channelId=' + account.getChannel() +
+          ' error=' + e.message)
       }
     }
 
