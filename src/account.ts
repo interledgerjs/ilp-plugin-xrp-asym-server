@@ -12,12 +12,14 @@ const BALANCE = (a: string) => a
 const INCOMING_CLAIM = (a: string) => a + ':claim'
 const CHANNEL = (a: string) => a + ':channel'
 const IS_BLOCKED = (a: string) => a + ':block'
+const BLOCK_REASON = (a: string) => a + ':block_reason'
 const CLIENT_CHANNEL = (a: string) => a + ':client_channel'
 const OUTGOING_BALANCE = (a: string) => a + ':outgoing_balance'
 const LAST_CLAIMED = (a: string) => a + ':last_claimed'
 // TODO: the channels to accounts map
 
 const RETRY_DELAY = 2000
+const DEFAULT_BLOCK_REASON = 'channel must be re-established'
 
 export interface AccountParams {
   account: string
@@ -126,6 +128,7 @@ export class Account {
       this._store.loadObject(INCOMING_CLAIM(this._account)),
       this._store.load(CHANNEL(this._account)),
       this._store.load(IS_BLOCKED(this._account)),
+      this._store.load(BLOCK_REASON(this._account)),
       this._store.load(CLIENT_CHANNEL(this._account)),
       this._store.load(OUTGOING_BALANCE(this._account)),
       this._store.load(LAST_CLAIMED(this._account))
@@ -156,8 +159,8 @@ export class Account {
         this._log.error('failed to load channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
           this._log.error('removing channel because it has been deleted')
+          this.block(true, 'channel cannot be loaded. channelId=' + channelId)
           this.deleteChannel()
-          this._state = ReadyState.BLOCKED // TODO: can we just ask for a new channel?
           return // TODO: do we need to do anything with the client channel still?
         } else if (e.name === 'TimeoutError') {
           // TODO: should this apply for all other errors too?
@@ -183,7 +186,7 @@ export class Account {
         this._log.error('failed to load client channel entry. error=' + e.message)
         if (e.name === 'RippledError' && e.message === 'entryNotFound') {
           this._log.error('blocking account because client channel cannot be loaded.')
-          this._state = ReadyState.BLOCKED // TODO: can we just ask for a new channel?
+          this.block(true, 'client channel cannot be loaded. clientChannelId=' + clientChannelId)
           return // TODO: do we need to do anything with the client channel still?
         } else if (e.name === 'TimeoutError') {
           this._log.error('timed out loading client channel. retrying. account=' + this.getAccount())
@@ -204,6 +207,7 @@ export class Account {
     this._store.unload(INCOMING_CLAIM(this._account))
     this._store.unload(CHANNEL(this._account))
     this._store.unload(IS_BLOCKED(this._account))
+    this._store.unload(BLOCK_REASON(this._account))
     this._store.unload(CLIENT_CHANNEL(this._account))
     this._store.unload(OUTGOING_BALANCE(this._account))
     const interval = this.getClaimIntervalId()
@@ -238,6 +242,11 @@ export class Account {
   isBlocked () {
     return this._state === ReadyState.BLOCKED ||
       this._store.get(IS_BLOCKED(this._account)) === 'true'
+  }
+
+  getBlockReason () {
+    return this._state === ReadyState.BLOCKED &&
+      (this._store.get(BLOCK_REASON(this._account)) || DEFAULT_BLOCK_REASON)
   }
 
   getClientChannel () {
@@ -311,9 +320,10 @@ export class Account {
     return this._store.delete(CHANNEL(this._account))
   }
 
-  block (isBlocked = true) {
+  block (isBlocked = true, reason = DEFAULT_BLOCK_REASON) {
     if (isBlocked) {
       this._state = ReadyState.BLOCKED
+      this._store.set(BLOCK_REASON(this._account), reason)
     }
     return this._store.set(IS_BLOCKED(this._account), String(isBlocked))
   }

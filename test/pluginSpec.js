@@ -249,6 +249,15 @@ describe('pluginSpec', () => {
       assert.isTrue(spy.calledWith(this.account + ':channel'))
     })
 
+    it('should reject and give block reason if account blocked', async function () {
+      const account = await this.plugin._getAccount(this.from)
+      await account.connect()
+      account.block(true, 'blocked for a reason')
+
+      await assert.isRejected(this.plugin._connect(this.from, {}),
+        /cannot connect to blocked account. reconfigure your uplink to connect with a new payment channel. reason=blocked for a reason/)
+    })
+
     it('should load details for existing paychan', async function () {
       const spy = this.sinon.spy(this.plugin._api, 'getPaymentChannel')
       this.plugin._store.setCache(this.account + ':channel', this.channelId)
@@ -996,6 +1005,7 @@ describe('pluginSpec', () => {
       this.account._store.setCache(this.account.getAccount() + ':block', 'true')
       await this.account.connect()
       assert.equal(this.account.getStateString(), 'BLOCKED')
+      assert.equal(this.account.getBlockReason(), 'channel must be re-established')
     })
 
     it('should set to ESTABLISHING_CHANNEL if no channel exists', async function () {
