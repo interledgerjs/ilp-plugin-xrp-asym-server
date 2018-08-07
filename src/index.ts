@@ -694,11 +694,15 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       util._requestId()
         .then((requestId: number) => {
           let protocolData
+          let amount
 
           try {
+            const owed = this._getAmountOwed(destination)
+            amount = owed.plus(preparePacket.data.amount).toString()
             protocolData = this._sendMoneyToAccount(
-              preparePacket.data.amount,
+              amount,
               destination)
+            this._decreaseAmountOwed(owed.toString(), destination)
           } catch (e) {
             this._increaseAmountOwed(preparePacket.data.amount, destination)
             throw new Error('failed to create valid claim.' +
@@ -709,7 +713,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
             type: BtpPacket.TYPE_TRANSFER,
             requestId,
             data: {
-              amount: preparePacket.data.amount,
+              amount,
               protocolData
             }
           })
@@ -721,28 +725,30 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         })
     } else if (parsedResponse.type === IlpPacket.Type.TYPE_ILP_REJECT) {
       if (parsedResponse.data.code === 'T04') {
+        const owed = this._getAmountOwed(destination)
         this._log.trace('sending settlement on T04 to pay owed balance.' +
-          ' destination=' + destination)
+          ' destination=' + destination +
+          ' owed=' + owed.toString())
 
         util._requestId()
           .then((requestId: number) => {
-            const owed = this._getAmountOwed(destination)
-            const protocolData = this._sendMoneyToAccount(owed, destination)
-            this._decreaseAmountOwed(owed, destination)
+            const protocolData = this._sendMoneyToAccount(owed.toString(), destination)
+            this._decreaseAmountOwed(owed.toString(), destination)
 
             return this._call(destination, {
               type: BtpPacket.TYPE_TRANSFER,
               requestId,
               data: {
-                amount: owed,
+                amount: owed.toString(),
                 protocolData
               }
             })
           })
           .catch((e: Error) => {
-            this._log.error(`failed to settle after T04.
-              destination=${destination}
-              error=${e && e.stack}`)
+            this._log.error('failed to settle after T04.' +
+              ` destination=${destination}` +
+              ` owed=${owed.toString()}` +
+              ` error=${e && e.stack}`)
           })
       }
     }
@@ -750,7 +756,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   _getAmountOwed (to: string) {
     const account = this._getAccount(to)
-    return account.getOwedBalance().toString()
+    return account.getOwedBalance()
   }
 
   _increaseAmountOwed (amount: string, to: string) {

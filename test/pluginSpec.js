@@ -963,14 +963,33 @@ describe('pluginSpec', () => {
       this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
       await new Promise(resolve => setTimeout(resolve, 10))
       assert.equal(this.account.getOwedBalance().toString(), '0')
-      assert.isTrue(stub.calledWith(this.from, {
+      assert.deepEqual(stub.firstCall.args, [this.from, {
         type: BtpPacket.TYPE_TRANSFER,
         requestId: 1,
         data: {
-          amount: 123,
+          amount: '123',
           protocolData: []
         }
-      }))
+      }])
+    })
+
+    it('should settle owed balance in addition to prepare', async function () {
+      const stub = this.sinon.stub(this.plugin, '_call')
+        .returns(Promise.resolve())
+
+      this.account.setOwedBalance('10')
+
+      this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      assert.equal(this.account.getOwedBalance().toString(), '0')
+      assert.deepEqual(stub.firstCall.args, [this.from, {
+        type: BtpPacket.TYPE_TRANSFER,
+        requestId: 1,
+        data: {
+          amount: '133',
+          protocolData: []
+        }
+      }])
     })
 
     it('should ignore fulfillments for zero-amount packets', async function () {
@@ -1060,14 +1079,14 @@ describe('pluginSpec', () => {
         await new Promise(resolve => setTimeout(resolve, 10))
         assert.equal(this.account.getOwedBalance().toString(), '0')
         assert.isTrue(this.sendMoneyStub.calledWith('10', this.from))
-        assert.isTrue(stub.calledWith(this.from, {
+        assert.deepEqual(stub.firstCall.args, [this.from, {
           type: BtpPacket.TYPE_TRANSFER,
           requestId: 1,
           data: {
             amount: '10',
             protocolData: []
           }
-        }))
+        }])
       })
 
       it('should not adjust owed balance if settle fails', async function () {
