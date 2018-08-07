@@ -563,6 +563,24 @@ describe('pluginSpec', () => {
           this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', '990')
         })
 
+        it('should issue a fund and throw an error if amount is above the capacity', function () {
+          const stub = this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, 'fundChannel')
+            .returns(Promise.resolve())
+
+          const initialOutgoingBalance = this.account.getOutgoingBalance()
+          assert.throws(() => this.plugin._sendMoneyToAccount(1000000000, this.from),
+            /channel does not have enough capacity to process claim. claimAmount=1000001 clientPaychan.amount=1000000/)
+          assert.equal(this.account.getOutgoingBalance().toString(), initialOutgoingBalance.toString())
+
+          assert.isTrue(stub.calledWith({
+            api: this.plugin._api,
+            channel: this.channelId,
+            address: this.plugin._address,
+            secret: this.plugin._secret,
+            amount: 1000000
+          }))
+        })
+
         it('should round high-scale amount up to next drop', async function () {
           const encodeSpy = this.sinon.spy(util, 'encodeClaim')
           this.sinon.stub(this.plugin, '_call').resolves(null)
@@ -577,6 +595,8 @@ describe('pluginSpec', () => {
           const encodeSpy = this.sinon.spy(util, 'encodeClaim')
           this.sinon.stub(this.plugin, '_call').resolves(null)
 
+          // make sure we don't exceed the channel balance
+          this.account._clientPaychan.amount = 1e6
           this.plugin._sendMoneyToAccount(100, this.from)
 
           assert.deepEqual(encodeSpy.getCall(0).args, [ '10900000', this.channelId ])
@@ -628,7 +648,29 @@ describe('pluginSpec', () => {
         const stub = this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, 'fundChannel')
           .returns(Promise.resolve())
 
+        const initialOutgoingBalance = this.account.getOutgoingBalance()
         this.plugin._sendMoneyToAccount(500000, this.from)
+        assert.equal(this.account.getOutgoingBalance().toString(),
+          initialOutgoingBalance.plus(500000).toString())
+
+        assert.isTrue(stub.calledWith({
+          api: this.plugin._api,
+          channel: this.channelId,
+          address: this.plugin._address,
+          secret: this.plugin._secret,
+          amount: 1000000
+        }))
+      })
+
+      it('should issue a fund and throw an error if amount is above the capacity', function () {
+        const stub = this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, 'fundChannel')
+          .returns(Promise.resolve())
+
+        const initialOutgoingBalance = this.account.getOutgoingBalance()
+        assert.throws(() => this.plugin._sendMoneyToAccount(1000000, this.from),
+          /channel does not have enough capacity to process claim. claimAmount=1012345 clientPaychan.amount=1000000/)
+        assert.equal(this.account.getOutgoingBalance().toString(), initialOutgoingBalance.toString())
+
         assert.isTrue(stub.calledWith({
           api: this.plugin._api,
           channel: this.channelId,
@@ -902,10 +944,13 @@ describe('pluginSpec', () => {
       }
 
       this.reject = {
-        type: IlpPacket.Type.TYPE_ILP_REJECT
+        type: IlpPacket.Type.TYPE_ILP_REJECT,
+        data: {
+          code: 'F00'
+        }
       }
 
-      this.sinon.stub(this.plugin, '_sendMoneyToAccount')
+      this.sendMoneyStub = this.sinon.stub(this.plugin, '_sendMoneyToAccount')
         .returns([])
       this.sinon.stub(require('ilp-plugin-xrp-paychan-shared').util, '_requestId')
         .returns(Promise.resolve(1))
@@ -917,6 +962,7 @@ describe('pluginSpec', () => {
 
       this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
       await new Promise(resolve => setTimeout(resolve, 10))
+      assert.equal(this.account.getOwedBalance().toString(), '0')
       assert.isTrue(stub.calledWith(this.from, {
         type: BtpPacket.TYPE_TRANSFER,
         requestId: 1,
@@ -980,6 +1026,63 @@ describe('pluginSpec', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10))
       assert.isFalse(stub.called)
+    })
+
+    it('should increase owed amount when settle fails', async function () {
+      const stub = this.sinon.stub(this.plugin, '_call')
+        .returns(Promise.resolve())
+
+      this.sendMoneyStub.throws(new Error('failed to sign claim'))
+
+      this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      assert.isFalse(stub.called)
+      assert.equal(this.account.getOwedBalance().toString(), '123')
+
+      this.plugin._handlePrepareResponse(this.from, this.fulfill, this.prepare)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      assert.isFalse(stub.called)
+      assert.equal(this.account.getOwedBalance().toString(), '246')
+    })
+
+    describe('T04 handling', () => {
+      beforeEach(function () {
+        this.reject.data.code = 'T04'
+      })
+
+      it('should trigger settlement on a T04 error', async function () {
+        const stub = this.sinon.stub(this.plugin, '_call')
+          .returns(Promise.resolve())
+
+        this.account.setOwedBalance('10')
+
+        this.plugin._handlePrepareResponse(this.from, this.reject, this.prepare)
+        await new Promise(resolve => setTimeout(resolve, 10))
+        assert.equal(this.account.getOwedBalance().toString(), '0')
+        assert.isTrue(this.sendMoneyStub.calledWith('10', this.from))
+        assert.isTrue(stub.calledWith(this.from, {
+          type: BtpPacket.TYPE_TRANSFER,
+          requestId: 1,
+          data: {
+            amount: '10',
+            protocolData: []
+          }
+        }))
+      })
+
+      it('should not adjust owed balance if settle fails', async function () {
+        const stub = this.sinon.stub(this.plugin, '_call')
+          .returns(Promise.resolve())
+
+        this.account.setOwedBalance('10')
+        this.sendMoneyStub.throws(new Error('failed to sign claim'))
+
+        this.plugin._handlePrepareResponse(this.from, this.reject, this.prepare)
+        await new Promise(resolve => setTimeout(resolve, 10))
+        assert.equal(this.account.getOwedBalance().toString(), '10')
+        assert.isTrue(this.sendMoneyStub.calledWith('10', this.from))
+        assert.isFalse(stub.called)
+      })
     })
   })
 
