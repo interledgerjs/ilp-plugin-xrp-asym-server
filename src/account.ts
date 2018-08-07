@@ -15,6 +15,7 @@ const IS_BLOCKED = (a: string) => a + ':block'
 const BLOCK_REASON = (a: string) => a + ':block_reason'
 const CLIENT_CHANNEL = (a: string) => a + ':client_channel'
 const OUTGOING_BALANCE = (a: string) => a + ':outgoing_balance'
+const OWED_BALANCE = (a: string) => a + ':owed_balance'
 const LAST_CLAIMED = (a: string) => a + ':last_claimed'
 // TODO: the channels to accounts map
 
@@ -256,6 +257,14 @@ export class Account {
     }
 
     return clientChannel
+  }
+
+  getOwedBalance () {
+    return new BigNumber(this._store.get(OWED_BALANCE(this._account)) || '0')
+  }
+
+  setOwedBalance (balance: string) {
+    return this._store.set(OWED_BALANCE(this._account), balance)
   }
 
   getOutgoingBalance () {

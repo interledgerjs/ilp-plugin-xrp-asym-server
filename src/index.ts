@@ -693,14 +693,24 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       this._log.trace('validated fulfillment. paying settlement.')
       util._requestId()
         .then((requestId: number) => {
+          let protocolData
+
+          try {
+            protocolData = this._sendMoneyToAccount(
+              preparePacket.data.amount,
+              destination)
+          } catch (e) {
+            this._increaseAmountOwed(preparePacket.data.amount, destination)
+            throw new Error('failed to create valid claim.' +
+              ' error=' + e.message)
+          }
+
           return this._call(destination, {
             type: BtpPacket.TYPE_TRANSFER,
             requestId,
             data: {
               amount: preparePacket.data.amount,
-              protocolData: this._sendMoneyToAccount(
-                preparePacket.data.amount,
-                destination)
+              protocolData
             }
           })
         })
@@ -709,7 +719,52 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
             destination=${destination}
             error=${e && e.stack}`)
         })
+    } else if (parsedResponse.type === IlpPacket.Type.TYPE_ILP_REJECT) {
+      if (parsedResponse.data.code === 'T04') {
+        this._log.trace('sending settlement on T04 to pay owed balance.' +
+          ' destination=' + destination)
+
+        util._requestId()
+          .then((requestId: number) => {
+            const owed = this._getAmountOwed(destination)
+            const protocolData = this._sendMoneyToAccount(owed, destination)
+            this._decreaseAmountOwed(owed, destination)
+
+            return this._call(destination, {
+              type: BtpPacket.TYPE_TRANSFER,
+              requestId,
+              data: {
+                amount: owed,
+                protocolData
+              }
+            })
+          })
+          .catch((e: Error) => {
+            this._log.error(`failed to settle after T04.
+              destination=${destination}
+              error=${e && e.stack}`)
+          })
+      }
     }
+  }
+
+  _getAmountOwed (to: string) {
+    const account = this._getAccount(to)
+    return account.getOwedBalance().toString()
+  }
+
+  _increaseAmountOwed (amount: string, to: string) {
+    const account = this._getAccount(to)
+    const owed = account.getOwedBalance()
+    const newOwed = owed.plus(amount)
+    account.setOwedBalance(newOwed.toString())
+  }
+
+  _decreaseAmountOwed (amount: string, to: string) {
+    const account = this._getAccount(to)
+    const owed = account.getOwedBalance()
+    const newOwed = owed.minus(amount)
+    account.setOwedBalance(newOwed.toString())
   }
 
   async sendMoney () {
@@ -728,13 +783,16 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     const currentBalance = account.getOutgoingBalance()
     const newBalance = currentBalance.plus(transferAmount)
-    account.setOutgoingBalance(newBalance.toString())
-    this._log.trace(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
 
     // sign a claim
     const clientChannel = account.getClientChannel()
     if (!clientChannel) {
       throw new Error('no client channel exists')
+    }
+
+    const clientPaychan = account.getClientPaychan()
+    if (!clientPaychan) {
+      throw new Error('no client channel details have been loaded')
     }
 
     const newDropBalance = util.xrpToDrops(this.baseToXrp(newBalance))
@@ -745,11 +803,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     this._log.trace(`signing outgoing claim for ${newDropBalance.toString()} drops on ` +
       `channel ${clientChannel}`)
-
-    const clientPaychan = account.getClientPaychan()
-    if (!clientPaychan) {
-      throw new Error('no client channel details have been loaded')
-    }
 
     const aboveThreshold = new BigNumber(util
       .xrpToDrops(clientPaychan.amount))
@@ -791,6 +844,19 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           account.setFunding(false)
         })
     }
+
+    const aboveCapacity = new BigNumber(util
+      .xrpToDrops(clientPaychan.amount))
+      .lt(newDropBalance.toString())
+
+    if (aboveCapacity) {
+      throw new Error('channel does not have enough capacity to process claim.' +
+        ' claimAmount=' + newDropBalance.toString() +
+        ' clientPaychan.amount=' + util.xrpToDrops(clientPaychan.amount))
+    }
+
+    account.setOutgoingBalance(newBalance.toString())
+    this._log.trace(`account ${account.getAccount()} added ${transferAmount} units, new balance ${newBalance}`)
 
     return [{
       protocolName: 'claim',
