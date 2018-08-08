@@ -182,6 +182,10 @@ export class Account {
     if (clientChannelId) {
       try {
         this._clientPaychan = await this._api.getPaymentChannel(clientChannelId) as Paychan
+        if (this.getOutgoingBalance().lt(this.xrpToBase(this._clientPaychan.balance))) {
+          this.setOutgoingBalance(this.xrpToBase(this._clientPaychan.balance))
+        }
+
         this._state = ReadyState.READY
       } catch (e) {
         this._log.error('failed to load client channel entry. error=' + e.message)
@@ -351,6 +355,10 @@ export class Account {
     this._assertState(ReadyState.PREPARING_CLIENT_CHANNEL)
 
     this._clientPaychan = clientPaychan
+    if (this.getOutgoingBalance().lt(this.xrpToBase(this._clientPaychan.balance))) {
+      this.setOutgoingBalance(this.xrpToBase(this._clientPaychan.balance))
+    }
+
     this._store.set(CLIENT_CHANNEL(this._account), clientChannel)
     this._state = ReadyState.READY
   }

@@ -130,6 +130,72 @@ describe('pluginSpec', () => {
     })
   })
 
+  describe('set client channel', () => {
+    beforeEach(async function () {
+      this.accountId = '35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
+      this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
+      this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      this.account = await this.plugin._getAccount(this.from)
+      this.plugin._channelToAccount.set(this.channelId, this.account)
+      this.paychan = {
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      }
+      this.account._state = ReadyState.PREPARING_CHANNEL
+      await this.account.setChannel(this.channelId, this.paychan)
+      this.account._state = ReadyState.PREPARING_CLIENT_CHANNEL
+    })
+
+    it('should set outgoing balance to client channel balance if higher', async function () {
+      assert.equal(this.account.getOutgoingBalance().toString(), '0')
+
+      await this.account.setClientChannel(this.channelId, { balance: '1' })
+      assert.equal(this.account.getOutgoingBalance().toString(), '1000000')
+    })
+
+    it('should set outgoing balance if higher when connecting client channel', async function () {
+      this.account._state = ReadyState.LOADING_CLIENT_CHANNEL
+      this.account._store.setCache(this.accountId + ':client_channel', 'client_channel_id')
+      const stub = this.sinon.stub(this.plugin._api, 'getPaymentChannel')
+        .resolves({
+          balance: '1'
+        })
+
+      assert.equal(this.account.getOutgoingBalance().toString(), '0')
+      await this.account._connectClientChannel()
+      assert.equal(this.account.getOutgoingBalance().toString(), '1000000')
+    })
+
+    it('should not set outgoing balance if higher when connecting client channel', async function () {
+      this.account._state = ReadyState.LOADING_CLIENT_CHANNEL
+      this.account._store.setCache(this.accountId + ':client_channel', 'client_channel_id')
+      const stub = this.sinon.stub(this.plugin._api, 'getPaymentChannel')
+        .resolves({
+          balance: '1'
+        })
+
+      this.account.setOutgoingBalance('2000000')
+      assert.equal(this.account.getOutgoingBalance().toString(), '2000000')
+      await this.account._connectClientChannel()
+      assert.equal(this.account.getOutgoingBalance().toString(), '2000000')
+    })
+
+    it('should not set outgoing balance to client channel balance if not higher', async function () {
+      this.account.setOutgoingBalance('2000000')
+      assert.equal(this.account.getOutgoingBalance().toString(), '2000000')
+
+      await this.account.setClientChannel(this.channelId, { balance: '1' })
+      assert.equal(this.account.getOutgoingBalance().toString(), '2000000')
+    })
+  })
+
   describe('channel close', () => {
     beforeEach(async function () {
       this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
@@ -150,7 +216,7 @@ describe('pluginSpec', () => {
       this.account._state = ReadyState.PREPARING_CHANNEL
       await this.account.setChannel(this.channelId, this.paychan)
       this.account._state = ReadyState.PREPARING_CLIENT_CHANNEL
-      await this.account.setClientChannel(this.channelId, {})
+      await this.account.setClientChannel(this.channelId, { balance: '0' })
       this.account.setIncomingClaim({
         amount: 1000,
         signature: 'foo'
