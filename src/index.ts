@@ -672,17 +672,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: IlpPacket.IlpPacket) {
     this._log.trace('got prepare response', parsedResponse)
-    if (parsedResponse.type === IlpPacket.Type.TYPE_ILP_FULFILL) {
-      if (!crypto.createHash('sha256')
-        .update(parsedResponse.data.fulfillment)
-        .digest()
-        .equals(preparePacket.data.executionCondition)) {
-        // TODO: could this leak data if the fulfillment is wrong in
-        // a predictable way?
-        throw new Errors.WrongConditionError(`condition and fulfillment don't match.
-            condition=${preparePacket.data.executionCondition.toString('hex')}
-            fulfillment=${parsedResponse.data.fulfillment.toString('hex')}`)
-      }
 
       if (preparePacket.data.amount === '0') {
         this._log.trace('validated fulfillment for zero-amount packet, not settling.')
