@@ -1014,7 +1014,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     switch (cmd.command) {
       case 'settle':
-        const amount = this.baseToXrp(cmd.amount || '0')
+        const amount = this.xrpToBase(cmd.amount || '0')
         const requestId = await util._requestId()
         const destination = this._prefix + account.getAccount()
         await this._call(destination, {
