@@ -672,7 +672,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: IlpPacket.IlpPacket) {
     this._log.trace('got prepare response', parsedResponse)
-
+    if (parsedResponse.type === IlpPacket.Type.TYPE_ILP_FULFILL) {
       if (preparePacket.data.amount === '0') {
         this._log.trace('validated fulfillment for zero-amount packet, not settling.')
         return
