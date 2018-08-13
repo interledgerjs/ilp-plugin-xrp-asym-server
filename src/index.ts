@@ -993,16 +993,23 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         available: String(Number(accountInfo.xrpBalance) - reserved)
       },
       clients: Array.from(this._accounts.values()).map(account => {
-        return {
-          account: account.getAccount(),
-          xrpAddress: account.getPaychan().account,
-          channel: account.getChannel(),
-          channelBalance: account.getPaychan().balance,
-          clientChannel: account.getClientChannel(),
-          clientChannelBalance: this.baseToXrp(account.getOutgoingBalance()),
-          state: account.getStateString()
+        try {
+          return {
+            account: account.getAccount(),
+            xrpAddress: account.getPaychan().account,
+            channel: account.getChannel(),
+            channelBalance: account.getPaychan().balance,
+            clientChannel: account.getClientChannel(),
+            clientChannelBalance: this.baseToXrp(account.getOutgoingBalance()),
+            state: account.getStateString()
+          }
+        } catch (e) {
+          this._log.trace('skipping account.' +
+            ' account=' + account.getAccount() +
+            ' error=' + e.message)
+          return null
         }
-      })
+      }).filter(a => a)
     }
   }
 
