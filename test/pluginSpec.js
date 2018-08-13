@@ -1305,6 +1305,19 @@ describe('pluginSpec', () => {
       })
     })
 
+    it('should filter out uninitialized accounts', async function () {
+      this.account._paychan = null
+      assert.deepEqual(await this.plugin.getAdminInfo(), {
+        clients: [],
+        xrpAddress: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        xrpBalance: {
+          'available': '9200',
+          'reserved': '800',
+          'total': '10000'
+        }
+      })
+    })
+
     it('should apply a "settle" command', async function () {
       const idStub = this.sinon.stub(util, '_requestId').resolves(12345)
       const callStub = this.sinon.stub(this.plugin, '_call').resolves(null)
