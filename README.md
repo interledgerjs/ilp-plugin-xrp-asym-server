@@ -1,5 +1,7 @@
 # ILP Plugin XRP Asym Server
 
+[![Greenkeeper badge](https://badges.greenkeeper.io/interledgerjs/ilp-plugin-xrp-asym-server.svg)](https://greenkeeper.io/)
+
 ILP Plugin XRP Asym Server allows you to accept payment channel connections
 from many users without adding them as peers. If you're running a connector,
 this is a great way to get sub-connectors and provide ILP connection to users
