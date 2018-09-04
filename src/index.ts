@@ -654,9 +654,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         this._bandwidth)
     }
 
-    if (newPrepared.gt(util.xrpToDrops(account.getPaychan().amount))) {
+    if (newPrepared.gt(this.xrpToBase(account.getPaychan().amount))) {
       throw new Errors.InsufficientLiquidityError('Insufficient funds, have: ' +
-        util.xrpToDrops(account.getPaychan().amount) +
+        this.xrpToBase(account.getPaychan().amount) +
         ' need: ' + newPrepared.toString())
     }
 
