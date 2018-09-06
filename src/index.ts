@@ -1,6 +1,5 @@
 'use strict'
 
-import * as crypto from 'crypto'
 import * as IlpPacket from 'ilp-packet'
 
 const { Errors } = IlpPacket
