@@ -55,6 +55,17 @@ export interface ExtraInfo {
   clientChannel?: string
 }
 
+export enum AdminCommandName {
+  BLOCK = 'block',
+  SETTLE = 'settle'
+}
+
+export interface AdminCommand {
+  command: AdminCommandName,
+  account: string,
+  amount?: string
+}
+
 export interface IlpPluginAsymServerOpts {
   assetScale?: number
   currencyScale?: number
@@ -641,9 +652,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         this._bandwidth)
     }
 
-    if (newPrepared.gt(util.xrpToDrops(account.getPaychan().amount))) {
+    if (newPrepared.gt(this.xrpToBase(account.getPaychan().amount))) {
       throw new Errors.InsufficientLiquidityError('Insufficient funds, have: ' +
-        util.xrpToDrops(account.getPaychan().amount) +
+        this.xrpToBase(account.getPaychan().amount) +
         ' need: ' + newPrepared.toString())
     }
 
@@ -953,5 +964,73 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     this._api.connection.removeAllListeners()
     await this._api.disconnect()
     await this._store.close()
+  }
+
+  async getAdminInfo () {
+    const accountInfo = await this._api.getAccountInfo(this._address)
+    const serverInfo = await this._api.getServerInfo()
+    const reserved = Number(accountInfo.ownerCount) *
+      Number(serverInfo.validatedLedger.reserveIncrementXRP)
+
+    return {
+      xrpAddress: this._address,
+      xrpBalance: {
+        total: accountInfo.xrpBalance,
+        reserved: String(reserved),
+        available: String(Number(accountInfo.xrpBalance) - reserved)
+      },
+      clients: Array.from(this._accounts.values()).map(account => {
+        try {
+          return {
+            account: account.getAccount(),
+            xrpAddress: account.getPaychan().account,
+            channel: account.getChannel(),
+            channelBalance: account.getPaychan().balance,
+            clientChannel: account.getClientChannel(),
+            clientChannelBalance: this.baseToXrp(account.getOutgoingBalance()),
+            state: account.getStateString()
+          }
+        } catch (e) {
+          this._log.trace('skipping account.' +
+            ' account=' + account.getAccount() +
+            ' error=' + e.message)
+          return null
+        }
+      }).filter(a => a)
+    }
+  }
+
+  async sendAdminInfo (cmd: AdminCommand) {
+    const account = this._accounts.get(cmd.account)
+    if (!account) {
+      throw new Error('no account by that name. account=' + account)
+    }
+
+    switch (cmd.command) {
+      case 'settle':
+        const amount = this.xrpToBase(cmd.amount || '0')
+        const requestId = await util._requestId()
+        const destination = this._prefix + account.getAccount()
+        await this._call(destination, {
+          type: BtpPacket.TYPE_TRANSFER,
+          requestId,
+          data: {
+            amount,
+            protocolData: this._sendMoneyToAccount(
+              amount,
+              destination)
+          }
+        })
+        break
+
+      case 'block':
+        account.block()
+        break
+
+      default:
+        throw Error('unknown command')
+    }
+
+    return {}
   }
 }

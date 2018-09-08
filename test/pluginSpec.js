@@ -1218,4 +1218,110 @@ describe('pluginSpec', () => {
       assert.equal(this.account.getStateString(), 'READY')
     })
   })
+
+  describe('admin interface', function () {
+    beforeEach(async function () {
+      this.sinon.stub(this.plugin._api, 'getAccountInfo')
+        .resolves({
+          xrpBalance: '10000',
+          ownerCount: '200'
+        })
+
+      this.sinon.stub(this.plugin._api, 'getServerInfo')
+        .resolves({
+          validatedLedger: {
+            reserveIncrementXRP: '4'
+          }
+        })
+
+      this.from = 'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak'
+      this.channelId = '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0'
+      this.account = await this.plugin._getAccount(this.from)
+      this.account._state = ReadyState.READY
+      this.plugin._store.setCache(this.account.getAccount() + ':client_channel', this.channelId)
+      this.plugin._store.setCache(this.account.getAccount() + ':channel', this.channelId)
+      this.plugin._store.setCache(this.account.getAccount() + ':claim', {
+        amount: '12345',
+        signature: 'foo'
+      })
+      this.account._paychan = this.account._clientPaychan = {
+        account: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot',
+        amount: '1',
+        balance: '0',
+        destination: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        publicKey: 'EDD69138B8AB9B0471A734927FABE2B20D2943215C8EEEC61DC11598C79424414D',
+        settleDelay: 3600,
+        sourceTag: 1280434065,
+        previousAffectingTransactionID: '51F331B863D078CF5EFEF1FBFF2D0F4C4D12FD160272EEB03F572C904B800057',
+        previousAffectingTransactionLedgerVersion: 6089142
+      }
+    })
+
+    it('should get admin info', async function () {
+      assert.deepEqual(await this.plugin.getAdminInfo(), {
+        clients: [{
+          account: '35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak',
+          channel: '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0',
+          channelBalance: '0',
+          clientChannel: '45455C767516029F34E9A9CEDD8626E5D955964A041F6C9ACD11F9325D6164E0',
+          clientChannelBalance: '0.000000',
+          state: 'READY',
+          xrpAddress: 'rPbVxek7Bovu4pWyCfGCVtgGbhwL6D55ot'
+        }],
+        xrpAddress: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        xrpBalance: {
+          'available': '9200',
+          'reserved': '800',
+          'total': '10000'
+        }
+      })
+    })
+
+    it('should filter out uninitialized accounts', async function () {
+      this.account._paychan = null
+      assert.deepEqual(await this.plugin.getAdminInfo(), {
+        clients: [],
+        xrpAddress: 'r9Ggkrw4VCfRzSqgrkJTeyfZvBvaG9z3hg',
+        xrpBalance: {
+          'available': '9200',
+          'reserved': '800',
+          'total': '10000'
+        }
+      })
+    })
+
+    it('should apply a "settle" command', async function () {
+      const idStub = this.sinon.stub(util, '_requestId').resolves(12345)
+      const callStub = this.sinon.stub(this.plugin, '_call').resolves(null)
+      const sendStub = this.sinon.stub(this.plugin, '_sendMoneyToAccount')
+        .returns([])
+
+      assert.deepEqual(await this.plugin.sendAdminInfo({
+        command: 'settle',
+        amount: '100',
+        account: this.account.getAccount()
+      }), {})
+      assert.deepEqual(sendStub.firstCall.args, [ '100000000', this.from ])
+      assert.deepEqual(callStub.firstCall.args, [
+        'test.example.35YywQ-3GYiO3MM4tvfaSGhty9NZELIBO3kmilL0Wak',
+        {
+         data: {
+           amount: '100000000',
+           protocolData: []
+         },
+         requestId: 12345,
+         type: 7
+        }
+      ])
+    })
+
+    it('should apply a "block" command', async function () {
+      assert.isFalse(this.account.isBlocked())
+      assert.deepEqual(await this.plugin.sendAdminInfo({
+        command: 'block',
+        account: this.account.getAccount()
+      }), {})
+      assert.isTrue(this.account.isBlocked())
+    })
+  })
 })
