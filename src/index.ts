@@ -293,7 +293,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
   // TODO: also implement cleanup logic
   async _connect (address: string, btpData: BtpData) {
-    const { requestId, data } = btpData
     const account = this._getAccount(address)
 
     if (account.getState() === ReadyState.INITIAL) {
