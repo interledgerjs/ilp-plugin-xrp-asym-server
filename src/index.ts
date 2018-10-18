@@ -24,7 +24,6 @@ const MiniAccountsPlugin = require('ilp-plugin-mini-accounts')
 
 const OUTGOING_CHANNEL_DEFAULT_AMOUNT = Math.pow(10, 6) // 1 XRP
 const MIN_INCOMING_CHANNEL = 10000000
-const ASSET_SCALE = 6
 const ASSET_CODE = 'XRP'
 
 import * as debug from 'debug'
@@ -531,7 +530,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
               data: ILDCP.serializeIldcpResponse({
                 clientAddress: this._prefix + account.getAccount(),
                 assetCode: ASSET_CODE,
-                assetScale: ASSET_SCALE
+                assetScale: this._currencyScale
               })
             })
           }]
