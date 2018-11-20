@@ -65,7 +65,7 @@ export class Account {
   private _clientPaychan?: Paychan
   private _clientChannel?: string
   private _funding: boolean
-  private _claimIntervalId?: number
+  private _claimIntervalId?: NodeJS.Timer
   private _log: any
   private _state: ReadyState
 
@@ -97,11 +97,11 @@ export class Account {
     return this._clientPaychan
   }
 
-  setClaimIntervalId (claimIntervalId: number) {
+  setClaimIntervalId (claimIntervalId: NodeJS.Timer) {
     this._claimIntervalId = claimIntervalId
   }
 
-  getClaimIntervalId (): number | void {
+  getClaimIntervalId (): NodeJS.Timer | void {
     return this._claimIntervalId
   }
 

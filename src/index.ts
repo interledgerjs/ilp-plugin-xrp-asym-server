@@ -31,7 +31,6 @@ import createLogger = require('ilp-logger')
 const DEBUG_NAMESPACE = 'ilp-plugin-xrp-server'
 
 const CHANNEL_KEYS = 'ilp-plugin-multi-xrp-paychan-channel-keys'
-const DEFAULT_TIMEOUT = 30000 // TODO: should this be something else?
 const {
   createSubmitter,
   util,
@@ -536,10 +535,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           }]
         }
 
-        let response = await Promise.race([
-          this._dataHandler(ilp.data),
-          this._expireData(account, ilp.data)
-        ])
+        let response = await this._dataHandler(ilp.data)
 
         if (ilp.data[0] === IlpPacket.Type.TYPE_ILP_PREPARE) {
           if (response[0] === IlpPacket.Type.TYPE_ILP_REJECT) {
@@ -592,35 +588,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     this._log.trace('registering auto-claim. interval=' + this._claimInterval,
       'account=' + account.getAccount())
 
-    account.setClaimIntervalId(setInterval(
+    account.setClaimIntervalId(global.setInterval(
       this._autoClaim.bind(this, account),
       this._claimInterval))
-  }
-
-  async _expireData (account: Account, ilpData: Buffer) {
-    const isPrepare = ilpData[0] === IlpPacket.Type.TYPE_ILP_PREPARE
-    const expiresAt = isPrepare
-      ? IlpPacket.deserializeIlpPrepare(ilpData).expiresAt
-      : new Date(Date.now() + DEFAULT_TIMEOUT) // TODO: other timeout as default?
-
-    await new Promise((resolve) => setTimeout(resolve, expiresAt.getTime() - Date.now()))
-    return isPrepare
-      ? IlpPacket.serializeIlpReject({
-        code: 'R00',
-        triggeredBy: this._prefix, // TODO: is that right?
-        message: 'expired at ' + new Date().toISOString(),
-        data: Buffer.from('')
-      })
-      : IlpPacket.serializeIlpError({
-        code: 'R00',
-        name: 'Transfer Timed Out',
-        triggeredBy: this._prefix + account.getAccount(),
-        forwardedBy: [],
-        triggeredAt: new Date(),
-        data: JSON.stringify({
-          message: `request timed out after ${DEFAULT_TIMEOUT} ms`
-        })
-      })
   }
 
   _handleIncomingPrepare (account: Account, ilpData: Buffer) {
@@ -679,7 +649,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     }
   }
 
-  _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: IlpPacket.IlpPacket) {
+  _handlePrepareResponse (destination: string, parsedResponse: IlpPacket.IlpPacket, preparePacket: {
+    type: IlpPacket.Type.TYPE_ILP_PREPARE,
+    typeString?: IlpPacket.Type.TYPE_ILP_PREPARE,
+    data: IlpPacket.IlpPrepare
+  }) {
     this._log.trace('got prepare response', parsedResponse)
     if (parsedResponse.type === IlpPacket.Type.TYPE_ILP_FULFILL) {
       if (preparePacket.data.amount === '0') {
