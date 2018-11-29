@@ -76,7 +76,7 @@ export interface IlpPluginAsymServerOpts {
   bandwidth?: string
   claimInterval?: number
   outgoingChannelAmount?: number
-  incomingChannelAmount?: number
+  minIncomingChannelAmount?: number
   _store: Store
   maxFeePercent?: string,
   log: any
@@ -94,7 +94,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   private _bandwidth: string
   private _claimInterval: number
   private _outgoingChannelAmount: number
-  private _incomingChannelAmount: number
+  private _minIncomingChannelAmount: number
   private _store: StoreWrapper
   private _txSubmitter: any
   private _maxFeePercent: string
@@ -131,7 +131,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     this._bandwidth = opts.maxBalance || opts.bandwidth || '0' // TODO: deprecate _bandwidth
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
     this._outgoingChannelAmount = opts.outgoingChannelAmount || OUTGOING_CHANNEL_DEFAULT_AMOUNT
-    this._incomingChannelAmount = opts.incomingChannelAmount || MIN_INCOMING_CHANNEL
+    this._minIncomingChannelAmount = opts.minIncomingChannelAmount || MIN_INCOMING_CHANNEL
     this._store = new StoreWrapper(opts._store)
     this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
     this._maxFeePercent = opts.maxFeePercent || '0.01'
@@ -504,10 +504,10 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           ' state=' + account.getStateString())
       }
 
-      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(this._incomingChannelAmount)) {
+      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(this._minIncomingChannelAmount)) {
         this._log.debug('denied outgoing paychan request; not enough has been escrowed')
         throw new Error('not enough has been escrowed in channel; must put ' +
-          this._incomingChannelAmount + ' drops on hold')
+          this._minIncomingChannelAmount + ' drops on hold')
       }
 
       this._log.info('an outgoing paychan has been authorized for ', account.getAccount(), '; establishing')
