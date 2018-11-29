@@ -75,6 +75,8 @@ export interface IlpPluginAsymServerOpts {
   maxBalance?: string
   bandwidth?: string
   claimInterval?: number
+  outgoingChannelAmount?: number
+  incomingChannelAmount?: number
   _store: Store
   maxFeePercent?: string,
   log: any
@@ -91,6 +93,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
   private _watcher: any
   private _bandwidth: string
   private _claimInterval: number
+  private _outgoingChannelAmount: number
+  private _incomingChannelAmount: number
   private _store: StoreWrapper
   private _txSubmitter: any
   private _maxFeePercent: string
@@ -126,6 +130,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     this._watcher = new ChannelWatcher(10 * 60 * 1000, this._api)
     this._bandwidth = opts.maxBalance || opts.bandwidth || '0' // TODO: deprecate _bandwidth
     this._claimInterval = opts.claimInterval || util.DEFAULT_CLAIM_INTERVAL
+    this._outgoingChannelAmount = opts.outgoingChannelAmount || OUTGOING_CHANNEL_DEFAULT_AMOUNT
+    this._incomingChannelAmount = opts.incomingChannelAmount || MIN_INCOMING_CHANNEL
     this._store = new StoreWrapper(opts._store)
     this._txSubmitter = createSubmitter(this._api, this._address, this._secret)
     this._maxFeePercent = opts.maxFeePercent || '0.01'
@@ -357,7 +363,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       const txTag = util.randomTag()
 
       const ev = await this._txSubmitter.submit('preparePaymentChannelCreate', {
-        amount: util.dropsToXrp(OUTGOING_CHANNEL_DEFAULT_AMOUNT),
+        amount: util.dropsToXrp(this._outgoingChannelAmount),
         destination: outgoingAccount,
         settleDelay: util.MIN_SETTLE_DELAY,
         publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
@@ -498,10 +504,10 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
           ' state=' + account.getStateString())
       }
 
-      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(MIN_INCOMING_CHANNEL)) {
+      if (new BigNumber(util.xrpToDrops(account.getPaychan().amount)).lt(this._incomingChannelAmount)) {
         this._log.debug('denied outgoing paychan request; not enough has been escrowed')
         throw new Error('not enough has been escrowed in channel; must put ' +
-          MIN_INCOMING_CHANNEL + ' drops on hold')
+          this._incomingChannelAmount + ' drops on hold')
       }
 
       this._log.info('an outgoing paychan has been authorized for ', account.getAccount(), '; establishing')
@@ -810,7 +816,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     const aboveThreshold = new BigNumber(util
       .xrpToDrops(clientPaychan.amount))
-      .minus(OUTGOING_CHANNEL_DEFAULT_AMOUNT / 2)
+      .minus(this._outgoingChannelAmount / 2)
       .lt(newDropBalance.toString())
 
     // if the claim we're signing is for more than the channel's max balance
@@ -824,7 +830,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         address: this._address,
         secret: this._secret,
         // TODO: configurable fund amount?
-        amount: OUTGOING_CHANNEL_DEFAULT_AMOUNT
+        amount: this._outgoingChannelAmount
       })
         .then(async () => {
           // reload channel details for the channel we just added funds to
