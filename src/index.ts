@@ -829,7 +829,6 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         channel: clientChannel,
         address: this._address,
         secret: this._secret,
-        // TODO: configurable fund amount?
         amount: this._outgoingChannelAmount
       })
         .then(async () => {
