@@ -35,7 +35,7 @@
     "ilp-protocol-ildcp": "^1.0.0",
     "ripple-address-codec": "^2.0.1",
     "ripple-lib": "^0.21.0",
-    "tweetnacl": "^1.0.0",
+    "sodium": "^3.0.2",
     "ws": "^4.0.0"
   },
   "devDependencies": {

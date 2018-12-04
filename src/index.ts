@@ -18,7 +18,7 @@ import {
   Store
 } from './util'
 
-const nacl = require('tweetnacl')
+const sodium = require('sodium')
 const BtpPacket = require('btp-packet')
 const MiniAccountsPlugin = require('ilp-plugin-mini-accounts')
 
@@ -358,14 +358,15 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
       this._log.trace('creating outgoing channel fund transaction')
       const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
-      const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
+      const keyPair = sodium.Key.Sign.fromSeed(keyPairSeed)
+      const publicKey = 'ED' + keyPair.publicKey.baseBuffer.toString('hex').toUpperCase()
       const txTag = util.randomTag()
 
       const ev = await this._txSubmitter.submit('preparePaymentChannelCreate', {
         amount: util.dropsToXrp(this._outgoingChannelAmount),
         destination: outgoingAccount,
         settleDelay: util.MIN_SETTLE_DELAY,
-        publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
+        publicKey,
         sourceTag: txTag
       })
 
@@ -467,10 +468,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
           const fullAccount = this._prefix + account.getAccount()
           const encodedChannelProof = util.encodeChannelProof(channel, fullAccount)
-          const isValid = nacl.sign.detached.verify(
-            encodedChannelProof,
-            channelSignatureProtocol.data,
-            Buffer.from(paychan.publicKey.substring(2), 'hex')
+          const isValid = sodium.Sign.verifyDetached(
+            {
+              sign: channelSignatureProtocol.data,
+              publicKey: Buffer.from(paychan.publicKey.substring(2), 'hex')},
+            encodedChannelProof
           )
           if (!isValid) {
             throw new Error(`invalid signature for proving channel ownership. ` +
@@ -782,8 +784,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     const newDropBalance = util.xrpToDrops(this.baseToXrp(newBalance))
     const encodedClaim = util.encodeClaim(newDropBalance.toString(), clientChannel)
     const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
-    const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
-    const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
+    const keyPair = sodium.Key.Sign.fromSeed(keyPairSeed)
+    const signer = new sodium.Sign(keyPair)
+    const signature = (signer.sign(encodedClaim)).sign.slice(0, 64)
 
     this._log.trace(`signing outgoing claim for ${newDropBalance.toString()} drops on ` +
       `channel ${clientChannel}`)
@@ -846,7 +849,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       contentType: 2,
       data: Buffer.from(JSON.stringify({
         amount: newBalance.toString(),
-        signature: Buffer.from(signature).toString('hex')
+        signature: signature.toString('hex')
       }))
     }]
   }
@@ -865,10 +868,11 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     this._log.trace('handling claim. account=' + account.getAccount(), 'amount=' + dropAmount)
 
     try {
-      valid = nacl.sign.detached.verify(
-        encodedClaim,
-        Buffer.from(signature, 'hex'),
-        Buffer.from(account.getPaychan().publicKey.substring(2), 'hex')
+      valid = sodium.Sign.verifyDetached(
+        {
+          sign: Buffer.from(signature, 'hex'),
+          publicKey: Buffer.from(account.getPaychan().publicKey.substring(2), 'hex')},
+          encodedClaim
       )
     } catch (err) {
       this._log.debug('verifying signature failed:', err.message)
