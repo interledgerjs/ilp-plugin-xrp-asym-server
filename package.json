@@ -1,6 +1,6 @@
 {
   "name": "ilp-plugin-xrp-asym-server",
-  "version": "1.7.3",
+  "version": "1.8.0",
   "description": "Asymmetric XRP paychan server for ILP",
   "main": "index.js",
   "types": "src/index.d.ts",
