@@ -10,7 +10,7 @@ chai.use(chaiAsPromised)
 const assert = chai.assert
 const sinon = require('sinon')
 const debug = require('debug')('ilp-plugin-xrp-asym-server:test')
-const nacl = require('tweetnacl')
+const sodium = require('sodium-universal')
 const EventEmitter = require('events')
 
 const PluginXrpAsymServer = require('..')
@@ -542,7 +542,7 @@ describe('pluginSpec', () => {
       it('should throw if the signature is for a higher amount than the channel max', function () {
         this.claim.amount = 1000001
         // This stub works because require uses a cache
-        this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
+        this.sinon.stub(require('sodium-universal'), 'crypto_sign_verify_detached')
           .returns(true)
 
         assert.throws(
@@ -552,7 +552,7 @@ describe('pluginSpec', () => {
 
       it('should not save the claim if it is lower than the previous', function () {
         // This stub works because require uses a cache
-        this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
+        this.sinon.stub(require('sodium-universal'), 'crypto_sign_verify_detached')
           .returns(true)
 
         const spy = this.sinon.spy(this.account, 'setIncomingClaim')
@@ -565,7 +565,7 @@ describe('pluginSpec', () => {
       it('should save the claim if it is higher than the previous', function () {
         // This stub works because require uses a cache
         this.claim.amount = 123456
-        this.sinon.stub(require('tweetnacl').sign.detached, 'verify')
+        this.sinon.stub(require('sodium-universal'), 'crypto_sign_verify_detached')
           .returns(true)
 
         const spy = this.sinon.spy(this.account, 'setIncomingClaim')
@@ -589,6 +589,10 @@ describe('pluginSpec', () => {
         signature: 'foo'
       })
       this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', '12345')
+      this.plugin._keyPair = {
+        publicKey: Buffer.alloc(sodium.crypto_sign_PUBLICKEYBYTES),
+        secretKey: Buffer.alloc(sodium.crypto_sign_SECRETKEYBYTES)
+      }
       this.claim = {
         amount: '12345',
         signature: 'foo'
@@ -622,9 +626,10 @@ describe('pluginSpec', () => {
         beforeEach(function () {
           this.plugin._currencyScale = 9
 
-          this.sinon.stub(nacl.sign, 'detached').returns('abcdef')
-
-          this.plugin._keyPair = {}
+          this.plugin._keyPair = {
+            publicKey: Buffer.alloc(sodium.crypto_sign_PUBLICKEYBYTES),
+            secretKey: Buffer.alloc(sodium.crypto_sign_SECRETKEYBYTES)
+          }
           this.plugin._funding = true
           this.plugin._store.setCache(this.account.getAccount() + ':outgoing_balance', '990')
         })
@@ -681,7 +686,8 @@ describe('pluginSpec', () => {
 
         it('should handle a claim', async function () {
           // this stub isn't working, which is why handleMoney is throwing
-          this.sinon.stub(nacl.sign.detached, 'verify').returns('abcdef')
+          this.sinon.stub(sodium, 'crypto_sign_verify_detached')
+          .returns(true)
           const encodeSpy = this.sinon.spy(util, 'encodeClaim')
 
           this.plugin._store.setCache(this.account.getAccount() + ':balance', 990)

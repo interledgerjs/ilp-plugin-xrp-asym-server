@@ -18,7 +18,7 @@ import {
   Store
 } from './util'
 
-const nacl = require('tweetnacl')
+const sodium = require('sodium-universal')
 const BtpPacket = require('btp-packet')
 const MiniAccountsPlugin = require('ilp-plugin-mini-accounts')
 
@@ -309,6 +309,16 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
         'reconfigure your uplink to connect with a new payment channel.' +
         ' reason=' + account.getBlockReason())
     }
+    const keyPairHolder = {
+      publicKey: Buffer.alloc(sodium.crypto_sign_PUBLICKEYBYTES),
+      secretKey: Buffer.alloc(sodium.crypto_sign_SECRETKEYBYTES)
+    }
+    sodium.crypto_sign_seed_keypair(
+      keyPairHolder.publicKey,
+      keyPairHolder.secretKey,
+      util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
+    )
+    this._keyPair = keyPairHolder
 
     if (account.getState() > ReadyState.PREPARING_CHANNEL) {
       try {
@@ -357,15 +367,14 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       const outgoingAccount = primary.data.toString()
 
       this._log.trace('creating outgoing channel fund transaction')
-      const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
-      const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
+      const publicKey = 'ED' + this._keyPair.publicKey.toString('hex').toUpperCase()
       const txTag = util.randomTag()
 
       const ev = await this._txSubmitter.submit('preparePaymentChannelCreate', {
         amount: util.dropsToXrp(this._outgoingChannelAmount),
         destination: outgoingAccount,
         settleDelay: util.MIN_SETTLE_DELAY,
-        publicKey: 'ED' + Buffer.from(keyPair.publicKey).toString('hex').toUpperCase(),
+        publicKey,
         sourceTag: txTag
       })
 
@@ -467,9 +476,9 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
           const fullAccount = this._prefix + account.getAccount()
           const encodedChannelProof = util.encodeChannelProof(channel, fullAccount)
-          const isValid = nacl.sign.detached.verify(
-            encodedChannelProof,
+          const isValid = sodium.crypto_sign_verify_detached(
             channelSignatureProtocol.data,
+            encodedChannelProof,
             Buffer.from(paychan.publicKey.substring(2), 'hex')
           )
           if (!isValid) {
@@ -781,10 +790,8 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
 
     const newDropBalance = util.xrpToDrops(this.baseToXrp(newBalance))
     const encodedClaim = util.encodeClaim(newDropBalance.toString(), clientChannel)
-    const keyPairSeed = util.hmac(this._secret, CHANNEL_KEYS + account.getAccount())
-    const keyPair = nacl.sign.keyPair.fromSeed(keyPairSeed)
-    const signature = nacl.sign.detached(encodedClaim, keyPair.secretKey)
-
+    const signature = Buffer.alloc(sodium.crypto_sign_BYTES)
+    sodium.crypto_sign_detached(signature, encodedClaim, this._keyPair.secretKey)
     this._log.trace(`signing outgoing claim for ${newDropBalance.toString()} drops on ` +
       `channel ${clientChannel}`)
 
@@ -846,7 +853,7 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
       contentType: 2,
       data: Buffer.from(JSON.stringify({
         amount: newBalance.toString(),
-        signature: Buffer.from(signature).toString('hex')
+        signature: signature.toString('hex')
       }))
     }]
   }
@@ -865,10 +872,10 @@ export default class IlpPluginAsymServer extends MiniAccountsPlugin {
     this._log.trace('handling claim. account=' + account.getAccount(), 'amount=' + dropAmount)
 
     try {
-      valid = nacl.sign.detached.verify(
-        encodedClaim,
-        Buffer.from(signature, 'hex'),
-        Buffer.from(account.getPaychan().publicKey.substring(2), 'hex')
+      valid = sodium.crypto_sign_verify_detached(
+          Buffer.from(signature, 'hex'),
+          encodedClaim,
+          Buffer.from(account.getPaychan().publicKey.substring(2), 'hex')
       )
     } catch (err) {
       this._log.debug('verifying signature failed:', err.message)
